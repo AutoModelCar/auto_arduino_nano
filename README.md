@@ -1,7 +1,7 @@
 # auto_arduino_nano
 
 Neccessary codes and libraries for the ardunio nano on the model car.
-Copy the libraries (MPU6050, MsTimer2, servo) to the ardunio/library folder.
+Copy the libraries (MPU6050, MsTimer2, I2Cdev) to the arduino-1.6.9/libraries folder.
 
 #main
 control power_board using green_button attached Pin PD4 <br />
