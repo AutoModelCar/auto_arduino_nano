@@ -11,9 +11,14 @@ Servo myservo;  // create servo object to control a servo
 int state =0;
 
 int potpin = 0;  // analog pin used to connect the potentiometer
-int val=90;    // variable to read the value from the analog pin
-String inputString = "";         // a string to hold incoming data
+int val=90;
+int servo_pw=1500;    // variable to read the value from the analog pin
+int last_pw=0;
+String inputLight = "";         // a string to hold incoming data
+String inputServo = "";         // a string to hold incoming data
+String lastLight ="";
 boolean stringComplete = false;  // whether the string is complete
+boolean servoComplete=false;
 boolean interrupt_flag=false;
 boolean servo_control=false;
 boolean ledState=false;
@@ -135,11 +140,11 @@ void setup() {
    
   // initialize serial:
   Serial.begin(115200);
-  myservo.writeMicroseconds(1600);
+  //myservo.writeMicroseconds(servo_pw);
   
   // reserve 200 bytes for the inputString:
-  inputString.reserve(200);
-
+  inputLight.reserve(100);
+  inputServo.reserve(200);
   // power board control
   pinMode(POWER_STATE_D0, OUTPUT);
   pinMode(POWER_STATE_D1, OUTPUT);
@@ -159,8 +164,10 @@ void setup() {
   // power 5 volt
   digitalWrite(POWER_STATE_D0, LOW);
   digitalWrite(POWER_STATE_D1, LOW); 
-  //delay(2000); 
-  //turnOffCar();
+
+  resetLights();
+  lastLight="";
+  MsTimer2::stop();
 
   //check battery
   //analogReadResolution(8);
@@ -237,12 +244,10 @@ void loop() {
      serialEvent(); //read serial port commands from odroid
         if (stringComplete) 
         {
-          servo_control=false;
-        
           lightControl(); // control lights of the car, this function should call befor control motor
-          if (servo_control==true)
-            servoControl(); // control servo motor
-          inputString = "";
+          servoControl(); // control servo motor
+          // inputServo = "";
+          inputLight = "";
           stringComplete = false;
         }
       // reset interrupt flag and get INT_STATUS byte
@@ -284,6 +289,7 @@ void loop() {
         #endif
     }
     checkBattery();
+    turnOffCar();
  
 }
 
@@ -343,7 +349,7 @@ void count()
 }
 void turnOffCar()
 {
-  int carShutdown=digitalRead(BUTTON_GREEN);
+  int carShutdown=digitalRead(BUTTON_RED);
   if (carShutdown==0)
   {
     digitalWrite(POWER_STATE_D0, HIGH);
@@ -353,13 +359,13 @@ void turnOffCar()
 }
 /* Control lights*/
 void servoControl(){
-    if (inputString=="en\r")
+    if (inputServo=="en")
     {
       myservo.attach(servo_pin);
       //Serial.println("enable");
       //Serial.println(inputString);
     }
-    else if (inputString=="di\r")
+    else if (inputServo=="di")
     {
       myservo.detach();
       //Serial.println("detach");
@@ -368,46 +374,73 @@ void servoControl(){
     else
     {
       //Serial.println(inputString);
-      val=inputString.toInt();
-      if (val<0)
-        val=0;
-      if (val>180)
-        val=180;
-      val = map(val, 0, 180, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
-      myservo.writeMicroseconds(val);  
+      val=inputServo.toInt();
+      if ((val<=180) && (val>=0))
+      {
+        servo_pw = map(val, 0, 180, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
+        //if (last_pw!=servo_pw)
+          myservo.writeMicroseconds(servo_pw); 
+        last_pw=servo_pw; 
+      }
     }
-   
 } 
 /* Control lights*/
 void lightControl(){ 
-  resetLights();
-  if (inputString=="le\r")
+  //resetLights();
+  if (inputLight=="Lle\r")
   {
-    MsTimer2::set(500, flashLeftLight); // 0.5 s period
-    MsTimer2::start();
+     if (lastLight!="Lle\r")
+      { 
+        digitalWrite(LED_TURN_RIGHT, LOW);
+        MsTimer2::set(500, flashLeftLight); // 0.5 s period
+        MsTimer2::start();
+      }
   }  
-  else if (inputString=="ri\r")
+  else if (inputLight=="Lri\r")
   {
-    MsTimer2::set(500, flashRightLight); // 0.5 s period
-    MsTimer2::start();
-  } 
-  else if (inputString=="stop\r")
-    digitalWrite(LED_BRACK, HIGH);
-  else if (inputString=="pa\r")
-    digitalWrite(LED_PARK_TAIL, HIGH);
-  else if (inputString=="ta\r")
-    digitalWrite(LED_PARK_TAIL, HIGH);
-  else if (inputString=="re\r")
-    digitalWrite(LED_BACKUP, HIGH);
-  else if (inputString=="fr\r")
-    digitalWrite(LED_HEAD, HIGH);
-  else
-    servo_control=true; 
+    if (lastLight!="Lri\r")
+      { 
+        digitalWrite(LED_TURN_LEFT, LOW);
+        MsTimer2::set(500, flashRightLight); // 0.5 s period
+        MsTimer2::start();
+      }
+  }
+  else if (inputLight=="Lstop\r")
+  {
+    if (lastLight!="Lstop\r")
+      digitalWrite(LED_BRACK, HIGH);
+  }
+  else if ((inputLight=="Lpa\r") || (inputLight=="Lta\r"))
+  {
+    if (lastLight!="Lpa\r")
+    {
+      if (lastLight!="Lta\r")
+        digitalWrite(LED_PARK_TAIL, HIGH);
+    }
+  }
+  else if (inputLight=="Lre\r")
+  {
+    if (lastLight!="Lre\r")
+      digitalWrite(LED_BACKUP, HIGH);
+  }
+  else if (inputLight=="Lfr\r")
+  {
+    if (lastLight!="Lfr\r")
+      digitalWrite(LED_HEAD, HIGH);
+  }
+  else if (inputLight=="LdiL\r")
+  {
+    if (lastLight!="LdiL\r")
+      resetLights();
+  }
+  
+  lastLight=inputLight;
+  
 } 
 void resetLights()
 {
-  MsTimer2::stop(); //stop flashing lights if it is on
-  startFlashing=false;
+  startFlashing==false;
+  MsTimer2::stop(); //stop flashing lights
   digitalWrite(LED_TURN_LEFT, LOW);
   digitalWrite(LED_TURN_RIGHT, LOW);
   digitalWrite(LED_BRACK, LOW);
@@ -439,10 +472,28 @@ void serialEvent() {
     char inChar = (char)Serial.read();
     //Serial.println(inChar);
     // add it to the inputString:
-    inputString += inChar;
+    
+    if (inChar == 'L') 
+    {
+      servoComplete = true;
+       //Serial.println("true");
+    }
+   
+    if (servoComplete==false)
+      inputServo += inChar;
+    else 
+      inputLight += inChar;
+
+     if (inChar == 'S') 
+     {
+      inputServo="";
+      inputLight="";
+      servoComplete = false;
+       //Serial.println("true");
+     }
     // if the incoming character is a newline, set a flag
     // so the main loop can do something about it:
-    if (inChar == '\r') 
+    if ((inChar == '\r')&&(servoComplete == true))
     {
       stringComplete = true;
        //Serial.println("true");
