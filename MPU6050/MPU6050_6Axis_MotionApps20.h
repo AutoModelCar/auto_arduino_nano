@@ -43,7 +43,7 @@ THE SOFTWARE.
 
 // Tom Carpenter's conditional PROGMEM code
 // http://forum.arduino.cc/index.php?topic=129407.0
-#ifndef __arm__
+#ifdef __AVR__
     #include <avr/pgmspace.h>
 #else
     // Teensy 3.0 library conditional PROGMEM code from Paul Stoffregen
@@ -409,8 +409,10 @@ uint8_t MPU6050::dmpInitialize() {
             DEBUG_PRINTLN(F("Setting gyro sensitivity to +/- 2000 deg/sec..."));
             setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
 
-            DEBUG_PRINTLN(F("Setting DMP configuration bytes (function unknown)..."));
+            DEBUG_PRINTLN(F("Setting DMP programm start address"));
+            //write start address MSB into register
             setDMPConfig1(0x03);
+            //write start address LSB into register
             setDMPConfig2(0x00);
 
             DEBUG_PRINTLN(F("Clearing OTP Bank flag..."));
