@@ -113,11 +113,42 @@ MPU6050 mpu;
 // format used for the InvenSense teapot demo
 //#define OUTPUT_TEAPOT
 
+#include <Adafruit_NeoPixel.h>
+// Which pin on the Arduino is connected to the NeoPixels?
+#define PIN            6
+// How many NeoPixels are attached to the Arduino?
+#define NUMPIXELS      21
+// When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+char command;
+char NumberColor;
+#include <Servo.h>
+Servo myservo; // create servo object to control a servo
+#define analogPin 1
+#define dirPin 4
+//#define EncoderPin 8
+#define servo_pin 10
+int servo_pw=1500;    // variable to set the angle of servo motor
+int last_pw=0;
+int val;
+volatile uint16_t T1Ovs1,T1Ovs2;
+volatile uint16_t T2OverFlow;
+volatile uint16_t Capt1, Capt2;  //VARIABLES TO HOLD TIMESTAMPS
+int16_t Encoder;              //CAPTURE FLAG
+int16_t last_Encoder;
+volatile uint16_t deltatime=(volatile uint16_t)0;
+String inputLight = "";         // a string to hold incoming data
+String inputServo = "";         // a string to hold incoming data
+String inputSpeed = "";         // a string to hold incoming data
+boolean stringComplete = false;  // whether the string is complete
+boolean servoComplete=false;
+boolean lightComplete=false;
+boolean reset_T1Ovs2=false;
+const byte EncoderPin = 3;
+int direction_motor=1;
 
 
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
-#define LED_PIN 13 // (Arduino is 13, Teensy is 11, Teensy++ is 6)
-bool blinkState = false;
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
@@ -150,8 +181,41 @@ void dmpDataReady() {
     mpuInterrupt = true;
 }
 
+/*--------------------------------------------------------------------------------------------------
+INTIALIZING TIMER
+---------------------------------------------------------------------------------------------------*/
+//void InitTimer1(void)
+//{
+//   TCNT1=0;                         //SETTING INTIAL TIMER VALUE
+//   TCCR1B|=(1<<ICES1);              //SETTING FIRST CAPTURE ON RISING EDGE ,(TCCR1B = TCCR1B | (1<<ICES1)
+//   TIMSK1|=(1<<ICIE1)|(1<<TOIE1);   //ENABLING INPUT CAPTURE AND OVERFLOW INTERRUPTS
+//}
+/*--------------------------------------------------------------------------------------------------
+STARTING TIMER
+---------------------------------------------------------------------------------------------------*/
+//void StartTimer1(void)
+//{
+////   ///setiing timer 1 as fast pwm : 0x01    1     31372.55hz STARTING TIMER WITH PRESCALER 1
+//   TCCR1B = (TCCR1B & 0b11111000) | 0x01;// 16MHz/256/2=31250Hz
+//   sei();                          //ENABLING GLOBAL INTERRUPTS 65536
+//}
+void StartTimer2(void)
+{
+  pinMode(11, OUTPUT); //976.5625Hz 
+  TCNT2 =0;
+  TIFR2 = 0x00;
+  TIMSK2 = TIMSK2 | 0x01;
+  TCCR2A = _BV(COM2A1) | _BV(COM2B1) | _BV(WGM21) | _BV(WGM20);
+  TCCR2B = _BV(CS22);
+  TCCR2B = (TCCR2B & 0b11111000) | 0x02;//62500HZ= 16MHz/1024/2=7812
+  sei();  
+}
 
-
+ISR(TIMER2_OVF_vect)
+{
+     TIFR2 = 0x00;
+     T1Ovs2++;//INCREMENTING OVERFLOW COUNTER
+}
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
@@ -226,9 +290,27 @@ void setup() {
         Serial.println(F(")"));
     }
 
-  
+
+     pinMode(EncoderPin,INPUT);
+     pinMode(dirPin,OUTPUT);
+     digitalWrite(EncoderPin,HIGH);             //pull up
+                                           // pinMode(13, OUTPUT);
+//     InitTimer1();                        //CALLING FUNCTION INITTIMER1 TO INITIALIZE TIMER 1
+//     StartTimer1();                       //CALLING FUNCTION STARTTIMER1 TO START TIMER 1
+  StartTimer2();
+     // attaches the servo on pin 9 to the servo object
+    myservo.attach(servo_pin);
+    pinMode(EncoderPin, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(EncoderPin), encoder, RISING);
+    pixels.begin(); // This initializes the NeoPixel library.
 }
 
+void encoder() {  
+  deltatime=(T1Ovs2)*25+(T1Ovs2)*5/10+TCNT2/10;// prevent overflow of integer number!
+  T1Ovs2=0;         //SAVING FIRST OVERFLOW COUNTER
+  TCNT2=0;
+  Encoder=Encoder+direction_motor; 
+}
 
 
 // ================================================================
@@ -237,14 +319,28 @@ void setup() {
 
 void loop() {
     // if programming failed, don't try to do anything
-    if (!dmpReady) return;
+  if (!dmpReady) return;
 
     // wait for MPU interrupt or extra packet(s) available
-    while (!mpuInterrupt && fifoCount < packetSize) {
+   while (!mpuInterrupt && fifoCount < packetSize) {
+   
+     // Serial.println("here");
         // other program behavior stuff here
-        // .
-        // .
-        // .
+       // val = analogRead(analogPin);    // read the input pin
+//        Serial.println(va/l);  
+//          Serial.print((float)deltatime); ///*0.0000000625 second
+//         Serial.print("Millisecond Encode"); 
+//          Serial.print((int)Encoder);
+//          Serial.print("\n");
+          serialEvent(); //read serial port commands from odroid
+          if (stringComplete) 
+          {
+            lightControl(); // control lights of the car, this function should call befor control motor
+            servoControl(); // control servo motor
+            speedControl();
+            stringComplete = false;
+//             Serial.print("string");
+          }
         // if you are really paranoid you can frequently test in between other
         // stuff to see if mpuInterrupt is true, and if so, "break;" from the
         // while() loop to immediately process the MPU data
@@ -308,14 +404,182 @@ void loop() {
             mpu.dmpGetQuaternion(&q, fifoBuffer);
             mpu.dmpGetGravity(&gravity, &q);
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-            Serial.print("ypr\t");
-            Serial.println(ypr[0] * 180/M_PI);
+//            Serial.print("ypr\t");
+//            Serial.println(ypr[0] * 180/M_PI);
 //            Serial.print("\t");
 //            Serial.print(ypr[1] * 180/M_PI);
 //            Serial.print("\t");
 //            Serial.println(ypr[2] * 180/M_PI);
         #endif
+        
+        Serial.print("y");
+        Serial.print(ypr[0] * 180/M_PI);
+        Serial.print("s");
+        Serial.print(deltatime); ///*0.0000000625 second
+        Serial.print("e"); 
+        Serial.print((int)Encoder);
+        Serial.print("\n");
 
+        if (last_Encoder==Encoder)
+          deltatime=(volatile uint16_t)0;
+        last_Encoder=Encoder;
+        
 
     }
 }
+
+/* Control lights*/
+void servoControl(){
+    if (inputServo=="en")
+    {
+      myservo.attach(servo_pin);
+      //Serial.println("enable");
+      //Serial.println(inputString);
+    }
+    else if (inputServo=="di")
+    {
+      myservo.detach();
+      //Serial.println("detach");
+      //Serial.println(inputString);
+    }
+    else if (inputServo!="")
+    {
+      //Serial.println(inputServo);
+      val=inputServo.toInt();
+      if ((val<=180) && (val>=0))
+      {
+        
+        servo_pw = map(val, 180, 0, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
+        //if (last_pw!=servo_pw)
+          myservo.writeMicroseconds(servo_pw); 
+        last_pw=servo_pw; 
+      }
+    }
+} 
+/* Control lights*/
+/*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
+void lightControl(){ 
+    // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
+    //command = strtok_r(inputLight,"L",&command);
+//    command = inputLight.charAt(1);
+//    val= command - '0';
+//    command = inputLight.charAt(2);
+//    val=val*10+ (command - '0');
+//    int i=val;
+//    command = inputLight.charAt(4);
+//    val=command - '0';
+//    command = inputLight.charAt(5); 
+//    val=val*10+ (command - '0');
+//    pixels.setPixelColor(i, pixels.Color((val/16)*64,((val%16)/4)*64,(val%4)*64)); // Moderately bright green color.
+
+  if (inputLight=="Lle")
+  {
+    for (int i=0;i<3;i++)
+      pixels.setPixelColor(i, pixels.Color(255,80,0)); //yellow
+  }  
+  else if (inputLight=="Lri")
+  {
+    for (int i=7;i<10;i++)
+      pixels.setPixelColor(i, pixels.Color(255,80,0)); //yellow
+  }
+  else if (inputLight=="Lstop")
+  {
+    for (int i=10;i<13;i++)
+      pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
+    for (int i=19;i<22;i++)
+      pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
+  }
+  else if ((inputLight=="Lpa") || (inputLight=="Lta\r"))
+  {
+    for (int i=10;i<22;i++)
+      pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
+  }
+  else if (inputLight=="Lre")
+  {
+    for (int i=10;i<22;i++)
+      pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
+  }
+  else if (inputLight=="Lfr")
+  {
+    for (int i=0;i<10;i++)
+      pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
+  }
+  else if (inputLight=="LdiL")
+  {
+    for (int i=0;i<22;i++)
+      pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
+  }
+  pixels.show(); // This sends the updated pixel color to the hardware.
+}
+void speedControl(){ 
+  int motor_val=0;
+   if (inputSpeed!="")
+   {
+      motor_val=inputSpeed.toInt();
+      motor_val=motor_val/4;
+      if (motor_val<0)
+      {
+        digitalWrite(dirPin, LOW); 
+        motor_val=motor_val*-1;
+        direction_motor=1;
+         
+      }
+      else
+      {
+        digitalWrite(dirPin, HIGH);
+        direction_motor=-1; 
+      }
+      OCR2A = motor_val;
+   }
+}
+/*
+  SerialEvent occurs whenever a new data comes in the
+ hardware serial RX.  This routine is run between each
+ time loop() runs, so using delay inside loop can delay
+ response.  Multiple bytes of data may be available.
+ */
+void serialEvent() {
+  while (Serial.available()) 
+  {
+    //Serial.println("here");
+    // get the new byte:
+    char inChar = (char)Serial.read();
+    // add it to the inputString:
+     if (inChar == 'S') 
+     {
+      inputServo="";
+      inputLight="";
+      inputSpeed="";
+      servoComplete = false;
+      lightComplete = false;
+       //Serial.println("true");
+    }
+    if (inChar == 'L') 
+    {
+      servoComplete = true;
+       //Serial.println("true");
+    }
+    else if (inChar == 'M') 
+    {
+      lightComplete = true;
+       //Serial.println("true");
+    }
+    if (inChar != 'S')
+      if (servoComplete==false)
+        inputServo += inChar;
+      else  if (lightComplete==false)
+        inputLight += inChar;
+      else if ((inChar != 'M')&&(inChar != '\r'))
+        inputSpeed += inChar;
+
+    
+    // if the incoming character is a newline, set a flag
+    // so the main loop can do something about it:
+    if ((inChar == '\r')&&(servoComplete == true)&&(lightComplete == true))
+    {
+      stringComplete = true;
+    }
+  }
+}
+
+
