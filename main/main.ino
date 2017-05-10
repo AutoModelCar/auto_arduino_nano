@@ -486,7 +486,7 @@ void lightControl(){
   {
     for (int i=10;i<13;i++)
       pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
-    for (int i=19;i<22;i++)
+    for (int i=18;i<21;i++)
       pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
   }
   else if ((inputLight=="Lpa") || (inputLight=="Lta\r"))
