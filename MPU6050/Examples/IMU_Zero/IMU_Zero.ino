@@ -288,7 +288,15 @@ void SetAveraging(int NewN)
    } // SetAveraging
 
 void setup()
-  { Initialize();
+  { 
+        Serial.println("-------------- done --------------");
+      // power board control
+  pinMode(8, OUTPUT);
+  pinMode(9, OUTPUT);
+      // power 5 volt
+      digitalWrite(8, LOW);
+      digitalWrite(9, LOW);
+    Initialize();
     for (int i = iAx; i <= iGz; i++)
       { // set targets and initial guesses
         Target[i] = 0; // must fix for ZAccel 
