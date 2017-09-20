@@ -255,12 +255,12 @@ void setup() {
     devStatus = mpu.dmpInitialize();
 
     // supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXAccelOffset(-573); 
-    mpu.setYAccelOffset(-2139); 
-    mpu.setZAccelOffset(1723); // 1688 factory default for my test chip
-    mpu.setXGyroOffset(71);
-    mpu.setYGyroOffset(-12);
-    mpu.setZGyroOffset(28);
+    mpu.setXAccelOffset(-1643); 
+    mpu.setYAccelOffset(589); 
+    mpu.setZAccelOffset(1333); // 1688 factory default for my test chip
+    mpu.setXGyroOffset(418);
+    mpu.setYGyroOffset(-57);
+    mpu.setZGyroOffset(69);
 
 
     // make sure it worked (returns 0 if so)
@@ -449,7 +449,7 @@ void servoControl(){
       if ((val<=180) && (val>=0))
       {
         
-        servo_pw = map(val, 0, 180, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
+        servo_pw = map(val, 180, 0, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
         //if (last_pw!=servo_pw)
           myservo.writeMicroseconds(servo_pw); 
         last_pw=servo_pw; 
@@ -474,37 +474,39 @@ void lightControl(){
 
   if (inputLight=="Lle")
   {
-    for (int i=0;i<2;i++)
+    for (int i=0;i<3;i++)
       pixels.setPixelColor(i, pixels.Color(255,80,0)); //yellow
   }  
   else if (inputLight=="Lri")
   {
-    for (int i=2;i<4;i++)
+    for (int i=7;i<10;i++)
       pixels.setPixelColor(i, pixels.Color(255,80,0)); //yellow
   }
   else if (inputLight=="Lstop")
   {
-    for (int i=4;i<8;i++)
+    for (int i=10;i<13;i++)
+      pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
+    for (int i=18;i<21;i++)
       pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
   }
   else if ((inputLight=="Lpa") || (inputLight=="Lta\r"))
   {
-    for (int i=4;i<8;i++)
+    for (int i=10;i<22;i++)
       pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
   }
   else if (inputLight=="Lre")
   {
-    for (int i=4;i<8;i++)
+    for (int i=10;i<22;i++)
       pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
   }
   else if (inputLight=="Lfr")
   {
-    for (int i=0;i<4;i++)
+    for (int i=0;i<10;i++)
       pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
   }
   else if (inputLight=="LdiL")
   {
-    for (int i=0;i<8;i++)
+    for (int i=0;i<22;i++)
       pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
   }
   pixels.show(); // This sends the updated pixel color to the hardware.
