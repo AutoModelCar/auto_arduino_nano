@@ -474,13 +474,13 @@ void lightControl(){
 
   if (inputLight=="Lle")
   {
-    for (int i=0;i<2;i++)
-      pixels.setPixelColor(i, pixels.Color(255,80,0)); //yellow
+      pixels.setPixelColor(0, pixels.Color(255,80,0)); //yellow
+      pixels.setPixelColor(7, pixels.Color(255,80,0)); //yellow
   }  
   else if (inputLight=="Lri")
   {
-    for (int i=2;i<4;i++)
-      pixels.setPixelColor(i, pixels.Color(255,80,0)); //yellow
+      pixels.setPixelColor(3, pixels.Color(255,80,0)); //yellow
+      pixels.setPixelColor(4, pixels.Color(255,80,0)); //yellow
   }
   else if (inputLight=="Lstop")
   {
@@ -489,12 +489,16 @@ void lightControl(){
   }
   else if ((inputLight=="Lpa") || (inputLight=="Lta\r"))
   {
+    for (int i=0;i<4;i++)
+      pixels.setPixelColor(i, pixels.Color(50,50,50)); //white (darker)
+
     for (int i=4;i<8;i++)
-      pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
+      pixels.setPixelColor(i, pixels.Color(50,0,0)); //red (darker)
+
   }
   else if (inputLight=="Lre")
   {
-      pixels.setPixelColor(5, pixels.Color(255,0,0)); //red
+      pixels.setPixelColor(5, pixels.Color(50,50,50)); //white (darker)
   }
   else if (inputLight=="Lfr")
   {
