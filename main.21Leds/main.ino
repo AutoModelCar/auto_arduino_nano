@@ -428,7 +428,7 @@ void loop() {
     }
 }
 
-/* Control lights*/
+/* Control servo*/
 void servoControl(){
     if (inputServo=="en")
     {
@@ -449,7 +449,7 @@ void servoControl(){
       if ((val<=180) && (val>=0))
       {
         
-        servo_pw = map(val, 180, 0, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
+        servo_pw = map(val, 0, 180, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
         //if (last_pw!=servo_pw)
           myservo.writeMicroseconds(servo_pw); 
         last_pw=servo_pw; 
@@ -491,12 +491,12 @@ void lightControl(){
   }
   else if ((inputLight=="Lpa") || (inputLight=="Lta\r"))
   {
-    for (int i=10;i<22;i++)
+    for (int i=10;i<21;i++)
       pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
   }
   else if (inputLight=="Lre")
   {
-    for (int i=10;i<22;i++)
+    for (int i=10;i<21;i++)
       pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
   }
   else if (inputLight=="Lfr")
@@ -506,7 +506,7 @@ void lightControl(){
   }
   else if (inputLight=="LdiL")
   {
-    for (int i=0;i<22;i++)
+    for (int i=0;i<21;i++)
       pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
   }
   pixels.show(); // This sends the updated pixel color to the hardware.
