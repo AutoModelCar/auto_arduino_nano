@@ -1,6 +1,7 @@
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
 // for both classes must be in the include path of your project
 #include "I2Cdev.h"
+#include <avr/pgmspace.h>
 #if __CLION_IDE__
 #include "MPU6050/MPU6050.h" // not necessary if using MotionApps include file
 #include "MPU6050/MPU6050_6Axis_MotionApps20.h"
@@ -27,7 +28,7 @@
 
 #define ENCODER_PIN 3
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
-
+//#define TEST_COMMUNICATION_LATENCY
 
 #include <ros.h>
 #include <std_msgs/Int8.h>
@@ -58,6 +59,17 @@ ros::Subscriber<std_msgs::String> ledCommand("led", onLedCommand);
 ros::Subscriber<std_msgs::UInt8> steeringCommand("steering", onSteeringCommand);
 ros::Subscriber<std_msgs::Int16> speedCommand("speed", onSpeedCommand);
 
+#ifdef TEST_COMMUNICATION_LATENCY
+#include <std_msgs/Bool.h>
+std_msgs::Bool resp_msg;
+
+ros::Publisher pubResponse("resp", &resp_msg);
+void onLatency(const std_msgs::Bool &cmd_msg) {
+    resp_msg.data = true;
+    pubResponse.publish(&resp_msg);
+}
+ros::Subscriber<std_msgs::Bool> requestCommand("req", onLatency);
+#endif
 
 // class default I2C address is 0x68
 // specific I2C addresses may be passed as a parameter here
@@ -100,10 +112,10 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ80
 Servo myservo; // create servo object to control a servo
 int servo_pw = 1500;    // variable to set the angle of servo motor
 int last_pw = 0;
-volatile uint16_t T1Ovs2;
+volatile unsigned long T1Ovs2;
 volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
-volatile uint16_t deltatime = 0;
+volatile unsigned long deltatime = 0;
 
 int8_t direction_motor = 1;
 
@@ -160,16 +172,18 @@ void encoder() {
 // ================================================================
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
     if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0)) {
-        servo_pw =
-            map(cmd_msg.data, 0, 180, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
-        //if (last_pw!=servo_pw)
-        myservo.writeMicroseconds(servo_pw);
+        // scale it to use it with the servo (value between 0 and 180)
+        servo_pw = map(cmd_msg.data, 0, 180, 900, 1900);
+
+        if (last_pw!=servo_pw) {
+            myservo.writeMicroseconds(servo_pw);
+        }
         last_pw = servo_pw;
     }
 }
 
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
-    int motor_val = cmd_msg.data / 4;
+    int16_t motor_val = cmd_msg.data / 4;
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, LOW);
         motor_val = motor_val * -1;
@@ -186,22 +200,22 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
 /* Control lights */
 /*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
 void onLedCommand(const std_msgs::String &cmd_msg){
-    if (strcmp(cmd_msg.data, "Lle") == 0)
+    if (strcmp_P(cmd_msg.data, PSTR("Lle")) == 0)
     {
         pixels.setPixelColor(0, pixels.Color(255,80,0)); //yellow
         pixels.setPixelColor(7, pixels.Color(255,80,0)); //yellow
     }
-    else if (strcmp(cmd_msg.data, "Lri") == 0)
+    else if (strcmp_P(cmd_msg.data, PSTR("Lri")) == 0)
     {
         pixels.setPixelColor(3, pixels.Color(255,80,0)); //yellow
         pixels.setPixelColor(4, pixels.Color(255,80,0)); //yellow
     }
-    else if (strcmp(cmd_msg.data, "Lstop") == 0)
+    else if (strcmp_P(cmd_msg.data, PSTR("Lstop")) == 0)
     {
         for (uint8_t i=4;i<8;i++)
             pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
     }
-    else if (strcmp(cmd_msg.data, "Lpa") == 0 || strcmp(cmd_msg.data, "Lta") == 0)
+    else if (strcmp_P(cmd_msg.data, PSTR("Lpa")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0)
     {
         for (uint8_t i=0;i<4;i++)
             pixels.setPixelColor(i, pixels.Color(50,50,50)); //white (darker)
@@ -210,16 +224,16 @@ void onLedCommand(const std_msgs::String &cmd_msg){
             pixels.setPixelColor(i, pixels.Color(50,0,0)); //red (darker)
 
     }
-    else if (strcmp(cmd_msg.data, "Lre") == 0)
+    else if (strcmp_P(cmd_msg.data, PSTR("Lre")) == 0)
     {
         pixels.setPixelColor(5, pixels.Color(50,50,50)); //white (darker)
     }
-    else if (strcmp(cmd_msg.data, "Lfr") == 0)
+    else if (strcmp_P(cmd_msg.data, PSTR("Lfr")) == 0)
     {
         for (uint8_t i=0;i<4;i++)
             pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
     }
-    else if (strcmp(cmd_msg.data, "LdiL") == 0)
+    else if (strcmp_P(cmd_msg.data, PSTR("LdiL")) == 0)
     {
         for (uint8_t i=0;i<8;i++)
             pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
@@ -242,6 +256,10 @@ void setup() {
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
     nh.subscribe(speedCommand);
+    #ifdef TEST_COMMUNICATION_LATENCY
+    nh.subscribe(requestCommand);
+    nh.advertise(pubResponse);
+    #endif
 
     // join I2C bus (I2Cdev library doesn't do this automatically)
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
@@ -435,7 +453,7 @@ void loop() {
         // we did receive data from the motor
         if (last_encoder_counter != encoder_counter) {
             if (deltatime != 0) {
-                twist_msg.linear.y = (float) deltatime;
+                twist_msg.linear.y = deltatime;
                 //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
                 twist_msg.linear.x = (3.14 / 3.0) / (deltatime * 0.005 * 0.001);
             }
@@ -455,6 +473,7 @@ void loop() {
                 deltatime = 0;
             }
         }
+        last_encoder_counter = encoder_counter;
     }
 
     nh.spinOnce();
