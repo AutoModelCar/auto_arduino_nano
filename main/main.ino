@@ -192,12 +192,12 @@ void setup() {
     devStatus = mpu.dmpInitialize();
 
     // supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXAccelOffset(-573); 
-    mpu.setYAccelOffset(-2139); 
-    mpu.setZAccelOffset(1723); // 1688 factory default for my test chip
-    mpu.setXGyroOffset(71);
-    mpu.setYGyroOffset(-12);
-    mpu.setZGyroOffset(28);
+    mpu.setXAccelOffset(1963); 
+    mpu.setYAccelOffset(3691); 
+    mpu.setZAccelOffset(1321); // 1688 factory default for my test chip
+    mpu.setXGyroOffset(-7);
+    mpu.setYGyroOffset(20);
+    mpu.setZGyroOffset(17);
 
 
     // make sure it worked (returns 0 if so)
@@ -327,16 +327,16 @@ void loop() {
             mpu.dmpGetQuaternion(&q, fifoBuffer);
             mpu.dmpGetGravity(&gravity, &q);
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-            Serial.print("y");
-            Serial.println(ypr[0] * 180/M_PI);
+//            Serial.print("y");
+//            Serial.println(ypr[0] * 180/M_PI);
 //            Serial.print("\t");
 //            Serial.print(ypr[1] * 180/M_PI);
 //            Serial.print("\t");
 //            Serial.println(ypr[2] * 180/M_PI);
         #endif
         
-//        Serial.print("y");
-//        Serial.print(ypr[0] * 180/M_PI);
+        Serial.print("y");
+        Serial.print(ypr[0] * 180/M_PI);
         Serial.print("s");
         Serial.print(deltatime); ///*0.0000000625 second
         Serial.print("e"); 
@@ -458,6 +458,10 @@ void speedControl(){
       {
         digitalWrite(dirPin, HIGH);
         direction_motor=-1; 
+      }
+      if (abs(motor_val)<15)
+      {
+        motor_val=15;
       }
       OCR2A = motor_val;
    }
