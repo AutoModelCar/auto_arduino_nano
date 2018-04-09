@@ -116,6 +116,7 @@ volatile unsigned long T1Ovs2;
 volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
 volatile unsigned long deltatime = 0;
+volatile boolean first_rising = true;
 
 int8_t direction_motor = 1;
 
@@ -159,10 +160,13 @@ ISR(TIMER2_OVF_vect) {
 }
 
 void encoder() {
-    deltatime = T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10;// prevent overflow of integer number!
+    if (!first_rising) {
+        deltatime = T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10;// prevent overflow of integer number!
+    }
+
     T1Ovs2 = 0;         //SAVING FIRST OVERFLOW COUNTER
     TCNT2 = 0;
-
+    first_rising = false;
     encoder_counter++;
 }
 
@@ -184,6 +188,7 @@ void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
 
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
     int16_t motor_val = cmd_msg.data / 4;
+
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, LOW);
         motor_val = motor_val * -1;
@@ -193,6 +198,11 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
         digitalWrite(DIR_PIN, HIGH);
         direction_motor = -1;
     }
+
+    if (abs(motor_val) < 15) {
+        motor_val = 15;
+    }
+
     OCR2A = motor_val;
 }
 
@@ -453,13 +463,17 @@ void loop() {
         // we did receive data from the motor
         if (last_encoder_counter != encoder_counter) {
             if (deltatime != 0) {
-                twist_msg.linear.y = deltatime;
+                //twist_msg.linear.y = deltatime;
                 //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
-                twist_msg.linear.x = (3.14 / 3.0) / (deltatime * 0.005 * 0.001);
+                if (deltatime > 0) {
+                    twist_msg.linear.x = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
+                } else {
+                    twist_msg.linear.y = 0;
+                }
             }
 
             twist_msg.linear.x = twist_msg.linear.x * direction_motor;
-            //twist_msg.linear.y = 0.0;
+            twist_msg.linear.y = 0.0;
             twist_msg.linear.z = 0.0;
             pubTwist.publish(&twist_msg);
         } else {
@@ -468,6 +482,9 @@ void loop() {
                 twist_msg.linear.x = 0.0;
                 twist_msg.linear.y = 0.0;
                 twist_msg.linear.z = 0.0;
+
+                first_rising = true;
+
                 pubTwist.publish(&twist_msg);
 
                 deltatime = 0;
