@@ -186,22 +186,22 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
 /* Control lights */
 /*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
 void onLedCommand(const std_msgs::String &cmd_msg){
-    if (strcmp(cmd_msg.data, "Lle"))
+    if (strcmp(cmd_msg.data, "Lle") == 0)
     {
         pixels.setPixelColor(0, pixels.Color(255,80,0)); //yellow
         pixels.setPixelColor(7, pixels.Color(255,80,0)); //yellow
     }
-    else if (strcmp(cmd_msg.data, "Lri"))
+    else if (strcmp(cmd_msg.data, "Lri") == 0)
     {
         pixels.setPixelColor(3, pixels.Color(255,80,0)); //yellow
         pixels.setPixelColor(4, pixels.Color(255,80,0)); //yellow
     }
-    else if (strcmp(cmd_msg.data, "Lstop"))
+    else if (strcmp(cmd_msg.data, "Lstop") == 0)
     {
         for (uint8_t i=4;i<8;i++)
             pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
     }
-    else if (strcmp(cmd_msg.data, "Lpa") || strcmp(cmd_msg.data, "Lta"))
+    else if (strcmp(cmd_msg.data, "Lpa") == 0 || strcmp(cmd_msg.data, "Lta") == 0)
     {
         for (uint8_t i=0;i<4;i++)
             pixels.setPixelColor(i, pixels.Color(50,50,50)); //white (darker)
@@ -210,16 +210,16 @@ void onLedCommand(const std_msgs::String &cmd_msg){
             pixels.setPixelColor(i, pixels.Color(50,0,0)); //red (darker)
 
     }
-    else if (strcmp(cmd_msg.data, "Lre"))
+    else if (strcmp(cmd_msg.data, "Lre") == 0)
     {
         pixels.setPixelColor(5, pixels.Color(50,50,50)); //white (darker)
     }
-    else if (strcmp(cmd_msg.data, "Lfr"))
+    else if (strcmp(cmd_msg.data, "Lfr") == 0)
     {
         for (uint8_t i=0;i<4;i++)
             pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
     }
-    else if (strcmp(cmd_msg.data, "LdiL"))
+    else if (strcmp(cmd_msg.data, "LdiL") == 0)
     {
         for (uint8_t i=0;i<8;i++)
             pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
