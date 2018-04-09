@@ -144,6 +144,7 @@ boolean stringComplete = false;  // whether the string is complete
 boolean servoComplete=false;
 boolean lightComplete=false;
 boolean reset_T1Ovs2=false;
+boolean rising_edge=false;
 const byte EncoderPin = 3;
 int direction_motor=1;
 
@@ -310,6 +311,7 @@ void encoder() {
   T1Ovs2=0;         //SAVING FIRST OVERFLOW COUNTER
   TCNT2=0;
   Encoder=Encoder+direction_motor; 
+  rising_edge=true;
 }
 
 
@@ -420,8 +422,14 @@ void loop() {
         Serial.print((int)Encoder);
         Serial.print("\n");
 
-        if (last_Encoder==Encoder)
-          deltatime=(volatile uint16_t)0;
+        if (rising_edge==true)
+        {
+          if (((T1Ovs2)*25+(T1Ovs2)*5/10+TCNT2/10)>40000)
+          {
+            deltatime=(volatile uint16_t)0;
+            rising_edge=false;
+          }
+        }
         last_Encoder=Encoder;
         
 
