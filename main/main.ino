@@ -22,19 +22,19 @@
 
 #define MAX_DELTATIME 20000
 #define analogPin 1
-#define dirPin 4
-//#define EncoderPin 8
-#define servo_pin 10
+#define DIR_PIN 4
+#define SERVO_PIN 10
 
+#define ENCODER_PIN 3
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
 
 
 #include <ros.h>
-#include <std_msgs/UInt32.h>
-#include <std_msgs/Int16.h>
 #include <std_msgs/Int8.h>
+#include <std_msgs/Int16.h>
 #include <std_msgs/UInt8.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/String.h>
 #include <geometry_msgs/Twist.h>
 
 ros::NodeHandle nh;
@@ -42,25 +42,19 @@ ros::NodeHandle nh;
 std_msgs::Float32 yaw_msg;
 std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
-std_msgs::Float32 revolution_msg;
+//std_msgs::Float32 revolution_msg;
 geometry_msgs::Twist twist_msg;
 
 ros::Publisher pub_yaw("yaw", &yaw_msg);
 ros::Publisher pubTwist("twist", &twist_msg);
-ros::Publisher pubRevolutions("revolutions", &revolution_msg);
+//ros::Publisher pubRevolutions("revolutions", &revolution_msg);
 ros::Publisher pubRoll("roll", &roll_msg);
 ros::Publisher pubPitch("pitch", &pitch_msg);
 
-/*void onFrontLeftLedCommand(const std_msgs::UInt32 &cmd_msg);
-void onFrontRightLedCommand(const std_msgs::UInt32 &cmd_msg);
-void onBackLeftLedCommand(const std_msgs::UInt32 &cmd_msg);
-void onBackRightLedCommand(const std_msgs::UInt32 &cmd_msg);*/
+void onLedCommand(const std_msgs::String &cmd_msg);
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg);
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg);
-/*ros::Subscriber<std_msgs::UInt32> frontLeftLedCommand("front_left_led", onFrontLeftLedCommand);
-ros::Subscriber<std_msgs::UInt32> frontRightLedCommand("front_right_led", onFrontRightLedCommand);
-ros::Subscriber<std_msgs::UInt32> backLeftLedCommand("back_left_led", onBackLeftLedCommand);
-ros::Subscriber<std_msgs::UInt32> backRightLedCommand("back_right_led", onBackRightLedCommand);*/
+ros::Subscriber<std_msgs::String> ledCommand("led", onLedCommand);
 ros::Subscriber<std_msgs::UInt8> steeringCommand("steering", onSteeringCommand);
 ros::Subscriber<std_msgs::Int16> speedCommand("speed", onSpeedCommand);
 
@@ -71,24 +65,6 @@ ros::Subscriber<std_msgs::Int16> speedCommand("speed", onSpeedCommand);
 // AD0 high = 0x69
 MPU6050 mpu;
 //MPU6050 mpu(0x69); // <-- use for AD0 high
-
-/* =========================================================================
-   NOTE: In addition to connection 3.3v, GND, SDA, and SCL, this sketch
-   depends on the MPU-6050's INT pin being connected to the Arduino's
-   external interrupt #0 pin. On the Arduino Uno and Mega 2560, this is
-   digital I/O pin 2.
- * ========================================================================= */
-
-/* =========================================================================
-   NOTE: Arduino v1.0.1 with the Leonardo board generates a compile error
-   when using Serial.write(buf, len). The Teapot output uses this method.
-   The solution requires a modification to the Arduino USBAPI.h file, which
-   is fortunately simple, but annoying. This will be fixed in the next IDE
-   release. For more info, see these links:
-   http://arduino.cc/forum/index.php/topic,109987.0.html
-   http://code.google.com/p/arduino/issues/detail?id=958
- * ========================================================================= */
-
 
 
 // uncomment "OUTPUT_READABLE_QUATERNION" if you want to see the actual
@@ -124,14 +100,12 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ80
 Servo myservo; // create servo object to control a servo
 int servo_pw = 1500;    // variable to set the angle of servo motor
 int last_pw = 0;
-volatile unsigned long T1Ovs2;
+volatile uint16_t T1Ovs2;
 volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
-volatile unsigned long deltatime = 0;
+volatile uint16_t deltatime = 0;
 
-const byte EncoderPin = 3;
-int direction_motor = 1;
-
+int8_t direction_motor = 1;
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
@@ -151,30 +125,11 @@ float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gra
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
 // ================================================================
-
 volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
 void dmpDataReady() {
     mpuInterrupt = true;
 }
 
-/*--------------------------------------------------------------------------------------------------
-INTIALIZING TIMER
----------------------------------------------------------------------------------------------------*/
-//void InitTimer1(void)
-//{
-//   TCNT1=0;                         //SETTING INTIAL TIMER VALUE
-//   TCCR1B|=(1<<ICES1);              //SETTING FIRST CAPTURE ON RISING EDGE ,(TCCR1B = TCCR1B | (1<<ICES1)
-//   TIMSK1|=(1<<ICIE1)|(1<<TOIE1);   //ENABLING INPUT CAPTURE AND OVERFLOW INTERRUPTS
-//}
-/*--------------------------------------------------------------------------------------------------
-STARTING TIMER
----------------------------------------------------------------------------------------------------*/
-//void StartTimer1(void)
-//{
-////   ///setiing timer 1 as fast pwm : 0x01    1     31372.55hz STARTING TIMER WITH PRESCALER 1
-//   TCCR1B = (TCCR1B & 0b11111000) | 0x01;// 16MHz/256/2=31250Hz
-//   sei();                          //ENABLING GLOBAL INTERRUPTS 65536
-//}
 void StartTimer2(void) {
     pinMode(11, OUTPUT); //976.5625Hz
     TCNT2 = 0;
@@ -198,36 +153,11 @@ void encoder() {
 
     encoder_counter++;
 }
+
+
 // ================================================================
-// ===                      INITIAL SETUP                       ===
+// ===               SUBSCRIBERS                                ===
 // ================================================================
-
-void onFrontLeftLedCommand(const std_msgs::UInt32 &cmd_msg) {
-    pixels.setPixelColor(0, cmd_msg.data);
-    pixels.setPixelColor(1, cmd_msg.data);
-    pixels.show();
-}
-
-void onFrontRightLedCommand(const std_msgs::UInt32 &cmd_msg) {
-    pixels.setPixelColor(2, cmd_msg.data);
-    pixels.setPixelColor(3, cmd_msg.data);
-    pixels.show();
-}
-
-void onBackLeftLedCommand(const std_msgs::UInt32 &cmd_msg) {
-    pixels.setPixelColor(6, cmd_msg.data);
-    pixels.setPixelColor(7, cmd_msg.data);
-    pixels.show();
-}
-
-void onBackRightLedCommand(const std_msgs::UInt32 &cmd_msg) {
-    pixels.setPixelColor(4, cmd_msg.data);
-    pixels.setPixelColor(5, cmd_msg.data);
-    pixels.show();
-}
-
-
-
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
     if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0)) {
         servo_pw =
@@ -241,31 +171,75 @@ void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
     int motor_val = cmd_msg.data / 4;
     if (motor_val < 0) {
-        digitalWrite(dirPin, LOW);
+        digitalWrite(DIR_PIN, LOW);
         motor_val = motor_val * -1;
         direction_motor = 1;
 
     } else {
-        digitalWrite(dirPin, HIGH);
+        digitalWrite(DIR_PIN, HIGH);
         direction_motor = -1;
     }
     OCR2A = motor_val;
 }
 
+
+/* Control lights */
+/*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
+void onLedCommand(const std_msgs::String &cmd_msg){
+    if (strcmp(cmd_msg.data, "Lle"))
+    {
+        pixels.setPixelColor(0, pixels.Color(255,80,0)); //yellow
+        pixels.setPixelColor(7, pixels.Color(255,80,0)); //yellow
+    }
+    else if (strcmp(cmd_msg.data, "Lri"))
+    {
+        pixels.setPixelColor(3, pixels.Color(255,80,0)); //yellow
+        pixels.setPixelColor(4, pixels.Color(255,80,0)); //yellow
+    }
+    else if (strcmp(cmd_msg.data, "Lstop"))
+    {
+        for (uint8_t i=4;i<8;i++)
+            pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
+    }
+    else if (strcmp(cmd_msg.data, "Lpa") || strcmp(cmd_msg.data, "Lta"))
+    {
+        for (uint8_t i=0;i<4;i++)
+            pixels.setPixelColor(i, pixels.Color(50,50,50)); //white (darker)
+
+        for (uint8_t i=4;i<8;i++)
+            pixels.setPixelColor(i, pixels.Color(50,0,0)); //red (darker)
+
+    }
+    else if (strcmp(cmd_msg.data, "Lre"))
+    {
+        pixels.setPixelColor(5, pixels.Color(50,50,50)); //white (darker)
+    }
+    else if (strcmp(cmd_msg.data, "Lfr"))
+    {
+        for (uint8_t i=0;i<4;i++)
+            pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
+    }
+    else if (strcmp(cmd_msg.data, "LdiL"))
+    {
+        for (uint8_t i=0;i<8;i++)
+            pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
+    }
+    pixels.show(); // This sends the updated pixel color to the hardware.
+}
+
+// ================================================================
+// ===                      INITIAL SETUP                       ===
+// ================================================================
 void setup() {
     nh.getHardware()->setBaud(1000000);
     nh.initNode();
     nh.advertise(pubTwist);
     nh.advertise(pub_yaw);
-    nh.advertise(pubRevolutions);
+    //nh.advertise(pubRevolutions);
     nh.advertise(pubRoll);
     nh.advertise(pubPitch);
 
-    /*nh.subscribe(frontLeftLedCommand);
-    nh.subscribe(frontRightLedCommand);
-    nh.subscribe(backLeftLedCommand);
-    nh.subscribe(backRightLedCommand);*/
-
+    nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
     nh.subscribe(speedCommand);
 
@@ -276,12 +250,6 @@ void setup() {
 #elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
     Fastwire::setup(400, true);
 #endif
-
-    // NOTE: 8MHz or slower host processors, like the Teensy @ 3.3v or Ardunio
-    // Pro Mini running at 3.3v, cannot handle this baud rate reliably due to
-    // the baud timing being too misaligned with processor ticks. You must use
-    // 38400 or slower in these cases, or use some kind of external separate
-    // crystal solution for the UART timer.
 
     // initialize device
     nh.logerror(F("Initializing I2C devices..."));
@@ -331,17 +299,14 @@ void setup() {
         nh.logerror(F(")"));
     }
 
-    pinMode(EncoderPin, INPUT);
-    pinMode(dirPin, OUTPUT);
-    digitalWrite(EncoderPin, HIGH);             //pull up
-    // pinMode(13, OUTPUT);
-//     InitTimer1();                        //CALLING FUNCTION INITTIMER1 TO INITIALIZE TIMER 1
-//     StartTimer1();                       //CALLING FUNCTION STARTTIMER1 TO START TIMER 1
+    pinMode(ENCODER_PIN, INPUT);
+    pinMode(DIR_PIN, OUTPUT);
+    pinMode(ENCODER_PIN, INPUT_PULLUP);
+    digitalWrite(ENCODER_PIN, HIGH);             //pull up
     StartTimer2();
     // attaches the servo on pin 9 to the servo object
-    myservo.attach(servo_pin);
-    pinMode(EncoderPin, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(EncoderPin), encoder, RISING);
+    myservo.attach(SERVO_PIN);
+    attachInterrupt(digitalPinToInterrupt(ENCODER_PIN), encoder, RISING);
     pixels.begin(); // This initializes the NeoPixel library.
 }
 
@@ -464,8 +429,8 @@ void loop() {
         roll_msg.data = ypr[2] * 180.0 / M_PI;
         pubRoll.publish(&roll_msg);
 
-        revolution_msg.data = encoder_counter / 6.0;
-        pubRevolutions.publish(&revolution_msg);
+        //revolution_msg.data = encoder_counter / 6.0;
+        //pubRevolutions.publish(&revolution_msg);
 
         // we did receive data from the motor
         if (last_encoder_counter != encoder_counter) {
@@ -494,113 +459,5 @@ void loop() {
 
     nh.spinOnce();
 }
-
-
-/* Control lights */
-/*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
-/*void lightControl(){ 
-    // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
-    //command = strtok_r(inputLight,"L",&command);
-//    command = inputLight.charAt(1);
-//    val= command - '0';
-//    command = inputLight.charAt(2);
-//    val=val*10+ (command - '0');
-//    int i=val;
-//    command = inputLight.charAt(4);
-//    val=command - '0';
-//    command = inputLight.charAt(5); 
-//    val=val*10+ (command - '0');
-//    pixels.setPixelColor(i, pixels.Color((val/16)*64,((val%16)/4)*64,(val%4)*64)); // Moderately bright green color.
-
-  if (inputLight=="Lle")
-  {
-      pixels.setPixelColor(0, pixels.Color(255,80,0)); //yellow
-      pixels.setPixelColor(7, pixels.Color(255,80,0)); //yellow
-  }  
-  else if (inputLight=="Lri")
-  {
-      pixels.setPixelColor(3, pixels.Color(255,80,0)); //yellow
-      pixels.setPixelColor(4, pixels.Color(255,80,0)); //yellow
-  }
-  else if (inputLight=="Lstop")
-  {
-    for (int i=4;i<8;i++)
-      pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
-  }
-  else if ((inputLight=="Lpa") || (inputLight=="Lta\r"))
-  {
-    for (int i=0;i<4;i++)
-      pixels.setPixelColor(i, pixels.Color(50,50,50)); //white (darker)
-
-    for (int i=4;i<8;i++)
-      pixels.setPixelColor(i, pixels.Color(50,0,0)); //red (darker)
-
-  }
-  else if (inputLight=="Lre")
-  {
-      pixels.setPixelColor(5, pixels.Color(50,50,50)); //white (darker)
-  }
-  else if (inputLight=="Lfr")
-  {
-    for (int i=0;i<4;i++)
-      pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
-  }
-  else if (inputLight=="LdiL")
-  {
-    for (int i=0;i<8;i++)
-      pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
-  }
-  pixels.show(); // This sends the updated pixel color to the hardware.
-}
-
-/*
-  SerialEvent occurs whenever a new data comes in the
- hardware serial RX.  This routine is run between each
- time loop() runs, so using delay inside loop can delay
- response.  Multiple bytes of data may be available.
- */
-/*void serialEvent() {
-  while (Serial.available()) 
-  {
-    //Serial.println("here");
-    // get the new byte:
-    char inChar = (char)Serial.read();
-    // add it to the inputString:
-     if (inChar == 'S') 
-     {
-      inputServo="";
-      inputLight="";
-      inputSpeed="";
-      servoComplete = false;
-      lightComplete = false;
-       //Serial.println("true");
-    }
-    if (inChar == 'L') 
-    {
-      servoComplete = true;
-       //Serial.println("true");
-    }
-    else if (inChar == 'M') 
-    {
-      lightComplete = true;
-       //Serial.println("true");
-    }
-    if (inChar != 'S')
-      if (servoComplete==false)
-        inputServo += inChar;
-      else  if (lightComplete==false)
-        inputLight += inChar;
-      else if ((inChar != 'M')&&(inChar != '\r'))
-        inputSpeed += inChar;
-
-    
-    // if the incoming character is a newline, set a flag
-    // so the main loop can do something about it:
-    if ((inChar == '\r')&&(servoComplete == true)&&(lightComplete == true))
-    {
-      stringComplete = true;
-    }
-  }
-}*/
 
 
