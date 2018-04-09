@@ -1,46 +1,8 @@
-
 // I2C device class (I2Cdev) demonstration Arduino sketch for MPU6050 class using DMP (MotionApps v2.0)
 // 6/21/2012 by Jeff Rowberg <jeff@rowberg.net>
 // Updates should (hopefully) always be available at https://github.com/jrowberg/i2cdevlib
-//
-// Changelog:
-//      2013-05-08 - added seamless Fastwire support
-//                 - added note about gyro calibration
-//      2012-06-21 - added note about Arduino 1.0.1 + Leonardo compatibility error
-//      2012-06-20 - improved FIFO overflow handling and simplified read process
-//      2012-06-19 - completely rearranged DMP initialization code and simplification
-//      2012-06-13 - pull gyro and accel data from FIFO packet instead of reading directly
-//      2012-06-09 - fix broken FIFO read sequence and change interrupt detection to RISING
-//      2012-06-05 - add gravity-compensated initial reference frame acceleration output
-//                 - add 3D math helper file to DMP6 example sketch
-//                 - add Euler output and Yaw/Pitch/Roll output formats
-//      2012-06-04 - remove accel offset clearing for better results (thanks Sungon Lee)
-//      2012-06-01 - fixed gyro sensitivity to be 2000 deg/sec instead of 250
-//      2012-05-30 - basic DMP initialization working
 
-/* ============================================
-I2Cdev device library code is placed under the MIT license
-Copyright (c) 2012 Jeff Rowberg
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-===============================================
-*/
 
-// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
-// for both classes must be in the include path of your project
 #include "I2Cdev.h"
 
 #include "MPU6050_6Axis_MotionApps20.h"
@@ -58,24 +20,6 @@ THE SOFTWARE.
 // AD0 high = 0x69
 MPU6050 mpu;
 //MPU6050 mpu(0x69); // <-- use for AD0 high
-
-/* =========================================================================
-   NOTE: In addition to connection 3.3v, GND, SDA, and SCL, this sketch
-   depends on the MPU-6050's INT pin being connected to the Arduino's
-   external interrupt #0 pin. On the Arduino Uno and Mega 2560, this is
-   digital I/O pin 2.
- * ========================================================================= */
-
-/* =========================================================================
-   NOTE: Arduino v1.0.1 with the Leonardo board generates a compile error
-   when using Serial.write(buf, len). The Teapot output uses this method.
-   The solution requires a modification to the Arduino USBAPI.h file, which
-   is fortunately simple, but annoying. This will be fixed in the next IDE
-   release. For more info, see these links:
-   http://arduino.cc/forum/index.php/topic,109987.0.html
-   http://code.google.com/p/arduino/issues/detail?id=958
- * ========================================================================= */
-
 
 
 // uncomment "OUTPUT_READABLE_QUATERNION" if you want to see the actual
@@ -113,6 +57,7 @@ MPU6050 mpu;
 // format used for the InvenSense teapot demo
 //#define OUTPUT_TEAPOT
 
+// add the library to control the LED
 #include <Adafruit_NeoPixel.h>
 // Which pin on the Arduino is connected to the NeoPixels?
 #define PIN            6
@@ -122,6 +67,8 @@ MPU6050 mpu;
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 char command;
 char NumberColor;
+
+// add the library to control the Servo motor
 #include <Servo.h>
 Servo myservo; // create servo object to control a servo
 #define analogPin 1
@@ -131,10 +78,9 @@ Servo myservo; // create servo object to control a servo
 int servo_pw=1500;    // variable to set the angle of servo motor
 int last_pw=0;
 int val;
-volatile uint16_t T1Ovs1,T1Ovs2;
+volatile uint16_t T1Ovs2;     //
 volatile uint16_t T2OverFlow;
-volatile uint16_t Capt1, Capt2;  //VARIABLES TO HOLD TIMESTAMPS
-int16_t Encoder;              //CAPTURE FLAG
+int16_t Encoder;              //Counter of rising edges
 int16_t last_Encoder;
 volatile uint16_t deltatime=(volatile uint16_t)0;
 String inputLight = "";         // a string to hold incoming data
@@ -185,21 +131,6 @@ void dmpDataReady() {
 /*--------------------------------------------------------------------------------------------------
 INTIALIZING TIMER
 ---------------------------------------------------------------------------------------------------*/
-//void InitTimer1(void)
-//{
-//   TCNT1=0;                         //SETTING INTIAL TIMER VALUE
-//   TCCR1B|=(1<<ICES1);              //SETTING FIRST CAPTURE ON RISING EDGE ,(TCCR1B = TCCR1B | (1<<ICES1)
-//   TIMSK1|=(1<<ICIE1)|(1<<TOIE1);   //ENABLING INPUT CAPTURE AND OVERFLOW INTERRUPTS
-//}
-/*--------------------------------------------------------------------------------------------------
-STARTING TIMER
----------------------------------------------------------------------------------------------------*/
-//void StartTimer1(void)
-//{
-////   ///setiing timer 1 as fast pwm : 0x01    1     31372.55hz STARTING TIMER WITH PRESCALER 1
-//   TCCR1B = (TCCR1B & 0b11111000) | 0x01;// 16MHz/256/2=31250Hz
-//   sei();                          //ENABLING GLOBAL INTERRUPTS 65536
-//}
 void StartTimer2(void)
 {
   pinMode(11, OUTPUT); //976.5625Hz 
@@ -211,11 +142,24 @@ void StartTimer2(void)
   TCCR2B = (TCCR2B & 0b11111000) | 0x02;//62500HZ= 16MHz/1024/2=7812
   sei();  
 }
+/*--------------------------------------------------------------------------------------------------
+RESET TIMER OVERFLOW
+---------------------------------------------------------------------------------------------------*/
 
 ISR(TIMER2_OVF_vect)
 {
      TIFR2 = 0x00;
      T1Ovs2++;//INCREMENTING OVERFLOW COUNTER
+}
+/*--------------------------------------------------------------------------------------------------
+RISING EDGE INTERRUPT
+---------------------------------------------------------------------------------------------------*/
+void encoder() {  
+  deltatime=(T1Ovs2)*25+(T1Ovs2)*5/10+TCNT2/10;// prevent overflow of integer number!
+  T1Ovs2=0;         //SAVING FIRST OVERFLOW COUNTER
+  TCNT2=0;
+  Encoder=Encoder+direction_motor; 
+  rising_edge=true;
 }
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -230,17 +174,9 @@ void setup() {
         Fastwire::setup(400, true);
     #endif
 
-    // initialize serial communication
-    // (115200 chosen because it is required for Teapot Demo output, but it's
-    // really up to you depending on your project)
+    // initialize serial communication)
     Serial.begin(115200);
-    while (!Serial); // wait for Leonardo enumeration, others continue immediately
-
-    // NOTE: 8MHz or slower host processors, like the Teensy @ 3.3v or Ardunio
-    // Pro Mini running at 3.3v, cannot handle this baud rate reliably due to
-    // the baud timing being too misaligned with processor ticks. You must use
-    // 38400 or slower in these cases, or use some kind of external separate
-    // crystal solution for the UART timer.
+    while (!Serial); // wait for Serial
 
     // initialize device
     Serial.println(F("Initializing I2C devices..."));
@@ -294,25 +230,18 @@ void setup() {
 
      pinMode(EncoderPin,INPUT);
      pinMode(dirPin,OUTPUT);
+     pinMode(EncoderPin, INPUT_PULLUP);
      digitalWrite(EncoderPin,HIGH);             //pull up
-                                           // pinMode(13, OUTPUT);
-//     InitTimer1();                        //CALLING FUNCTION INITTIMER1 TO INITIALIZE TIMER 1
-//     StartTimer1();                       //CALLING FUNCTION STARTTIMER1 TO START TIMER 1
-  StartTimer2();
+
+     StartTimer2();
      // attaches the servo on pin 9 to the servo object
-    myservo.attach(servo_pin);
-    pinMode(EncoderPin, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(EncoderPin), encoder, RISING);
-    pixels.begin(); // This initializes the NeoPixel library.
+     myservo.attach(servo_pin);
+     // set 
+     attachInterrupt(digitalPinToInterrupt(EncoderPin), encoder, RISING);
+     pixels.begin(); // This initializes the NeoPixel library.
 }
 
-void encoder() {  
-  deltatime=(T1Ovs2)*25+(T1Ovs2)*5/10+TCNT2/10;// prevent overflow of integer number!
-  T1Ovs2=0;         //SAVING FIRST OVERFLOW COUNTER
-  TCNT2=0;
-  Encoder=Encoder+direction_motor; 
-  rising_edge=true;
-}
+
 
 
 // ================================================================
@@ -326,14 +255,7 @@ void loop() {
     // wait for MPU interrupt or extra packet(s) available
    while (!mpuInterrupt && fifoCount < packetSize) {
    
-     // Serial.println("here");
         // other program behavior stuff here
-       // val = analogRead(analogPin);    // read the input pin
-//        Serial.println(va/l);  
-//          Serial.print((float)deltatime); ///*0.0000000625 second
-//         Serial.print("Millisecond Encode"); 
-//          Serial.print((int)Encoder);
-//          Serial.print("\n");
           serialEvent(); //read serial port commands from odroid
           if (stringComplete) 
           {
@@ -341,7 +263,6 @@ void loop() {
             servoControl(); // control servo motor
             speedControl();
             stringComplete = false;
-//             Serial.print("string");
           }
         // if you are really paranoid you can frequently test in between other
         // stuff to see if mpuInterrupt is true, and if so, "break;" from the
@@ -406,16 +327,16 @@ void loop() {
             mpu.dmpGetQuaternion(&q, fifoBuffer);
             mpu.dmpGetGravity(&gravity, &q);
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-//            Serial.print("ypr\t");
-//            Serial.println(ypr[0] * 180/M_PI);
+            Serial.print("y");
+            Serial.println(ypr[0] * 180/M_PI);
 //            Serial.print("\t");
 //            Serial.print(ypr[1] * 180/M_PI);
 //            Serial.print("\t");
 //            Serial.println(ypr[2] * 180/M_PI);
         #endif
         
-        Serial.print("y");
-        Serial.print(ypr[0] * 180/M_PI);
+//        Serial.print("y");
+//        Serial.print(ypr[0] * 180/M_PI);
         Serial.print("s");
         Serial.print(deltatime); ///*0.0000000625 second
         Serial.print("e"); 
@@ -467,19 +388,7 @@ void servoControl(){
 /* Control lights */
 /*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
 void lightControl(){ 
-    // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
-    //command = strtok_r(inputLight,"L",&command);
-//    command = inputLight.charAt(1);
-//    val= command - '0';
-//    command = inputLight.charAt(2);
-//    val=val*10+ (command - '0');
-//    int i=val;
-//    command = inputLight.charAt(4);
-//    val=command - '0';
-//    command = inputLight.charAt(5); 
-//    val=val*10+ (command - '0');
-//    pixels.setPixelColor(i, pixels.Color((val/16)*64,((val%16)/4)*64,(val%4)*64)); // Moderately bright green color.
-
+  // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
   if (inputLight=="Lle")
   {
       pixels.setPixelColor(0, pixels.Color(255,80,0)); //yellow
