@@ -189,6 +189,10 @@ void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
     int16_t motor_val = cmd_msg.data / 4;
 
+    if (motor_val > 255) {
+        nh.logerror(F("motor value out of bound"));
+    }
+    
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, LOW);
         motor_val = motor_val * -1;
