@@ -20,7 +20,7 @@
 #define NUMPIXELS      21
 
 #include <Servo.h>
-
+#define OUTPUT_READABLE_YAWPITCHROLL
 #define MAX_DELTATIME 20000
 #define analogPin 1
 #define DIR_PIN 4
@@ -297,12 +297,12 @@ void setup() {
     devStatus = mpu.dmpInitialize();
 
     // supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXAccelOffset(-573);
-    mpu.setYAccelOffset(-2139);
-    mpu.setZAccelOffset(1723); // 1688 factory default for my test chip
-    mpu.setXGyroOffset(71);
-    mpu.setYGyroOffset(-12);
-    mpu.setZGyroOffset(28);
+    mpu.setXAccelOffset(-3180);
+    mpu.setYAccelOffset(-2813);
+    mpu.setZAccelOffset(1103); // 1688 factory default for my test chip
+    mpu.setXGyroOffset(197);
+    mpu.setYGyroOffset(-41);
+    mpu.setZGyroOffset(1);
 
     // make sure it worked (returns 0 if so)
     if (devStatus == 0) {
@@ -452,13 +452,13 @@ void loop() {
 //        Serial.print((int)encoder_counter);
 //        Serial.print("\n");
 
-        yaw_msg.data = ypr[0] * 180.0 / M_PI;
+        yaw_msg.data = ypr[0];
         pub_yaw.publish(&yaw_msg);
 
-        pitch_msg.data = ypr[1] * 180.0 / M_PI;
+        pitch_msg.data = ypr[1];
         pubPitch.publish(&pitch_msg);
 
-        roll_msg.data = ypr[2] * 180.0 / M_PI;
+        roll_msg.data = ypr[2];
         pubRoll.publish(&roll_msg);
 
         //revolution_msg.data = encoder_counter / 6.0;
