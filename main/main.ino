@@ -20,7 +20,6 @@
 #define NUMPIXELS      21
 
 #include <Servo.h>
-#define OUTPUT_READABLE_YAWPITCHROLL
 #define MAX_DELTATIME 20000
 #define analogPin 1
 #define DIR_PIN 4
@@ -43,12 +42,10 @@ ros::NodeHandle nh;
 std_msgs::Float32 yaw_msg;
 std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
-//std_msgs::Float32 revolution_msg;
 geometry_msgs::Twist twist_msg;
 
 ros::Publisher pub_yaw("yaw", &yaw_msg);
 ros::Publisher pubTwist("twist", &twist_msg);
-//ros::Publisher pubRevolutions("revolutions", &revolution_msg);
 ros::Publisher pubRoll("roll", &roll_msg);
 ros::Publisher pubPitch("pitch", &pitch_msg);
 
@@ -189,13 +186,14 @@ void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
     int16_t motor_val = cmd_msg.data / 4;
 
-    if (motor_val > 255) {
-        nh.logerror(F("motor value out of bound"));
+    if (abs(motor_val) > 255) {
+        return;
     }
-    
+
+    uint8_t servo_val = (uint8_t) abs(motor_val);
+
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, LOW);
-        motor_val = motor_val * -1;
         direction_motor = 1;
 
     } else {
@@ -203,11 +201,11 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
         direction_motor = -1;
     }
 
-    if (abs(motor_val) < 15) {
-        motor_val = 15;
+    if (servo_val < 15) {
+        servo_val = 15;
     }
 
-    OCR2A = motor_val;
+    OCR2A = servo_val;
 }
 
 
@@ -263,17 +261,16 @@ void setup() {
     nh.initNode();
     nh.advertise(pubTwist);
     nh.advertise(pub_yaw);
-    //nh.advertise(pubRevolutions);
     nh.advertise(pubRoll);
     nh.advertise(pubPitch);
 
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
     nh.subscribe(speedCommand);
-    #ifdef TEST_COMMUNICATION_LATENCY
+#ifdef TEST_COMMUNICATION_LATENCY
     nh.subscribe(requestCommand);
     nh.advertise(pubResponse);
-    #endif
+#endif
 
     // join I2C bus (I2Cdev library doesn't do this automatically)
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
@@ -352,152 +349,109 @@ void loop() {
     if (!dmpReady) return;
 
     // wait for MPU interrupt or extra packet(s) available
-    while (!mpuInterrupt && fifoCount < packetSize) {
+    //while (!mpuInterrupt && fifoCount < packetSize) {}
 
-        // Serial.println("here");
-        // other program behavior stuff here
-        // val = analogRead(analogPin);    // read the input pin
-//        Serial.println(va/l);  
-//          Serial.print((float)deltatime); ///*0.0000000625 second
-//         Serial.print("Millisecond Encode"); 
-//          Serial.print((int)encoder_counter);
-//          Serial.print("\n");
-//          serialEvent(); //read serial port commands from odroid
-//          if (stringComplete) 
-//          {
-//            lightControl(); // control lights of the car, this function should call befor control motor
-//            servoControl(); // control servo motor
-//            speedControl();
-//            stringComplete = false;
-//             Serial.print("string");
-//          }
-        // if you are really paranoid you can frequently test in between other
-        // stuff to see if mpuInterrupt is true, and if so, "break;" from the
-        // while() loop to immediately process the MPU data
-        // .
-        // .
-        // .
-    }
+    if (mpuInterrupt || fifoCount >= packetSize) {
 
-    // reset interrupt flag and get INT_STATUS byte
-    mpuInterrupt = false;
-    mpuIntStatus = mpu.getIntStatus();
+        // reset interrupt flag and get INT_STATUS byte
+        mpuInterrupt = false;
+        mpuIntStatus = mpu.getIntStatus();
 
-    // get current FIFO count
-    fifoCount = mpu.getFIFOCount();
+        // get current FIFO count
+        fifoCount = mpu.getFIFOCount();
 
-    // check for overflow (this should never happen unless our code is too inefficient)
-    if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
-        // reset so we can continue cleanly
-        mpu.resetFIFO();
-        //nh.logerror("FIFO overflow!");
+        // check for overflow (this should never happen unless our code is too inefficient)
+        if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
+            // reset so we can continue cleanly
+            mpu.resetFIFO();
+            nh.logerror(F("FIFO overflow!"));
 
-        // otherwise, check for DMP data ready interrupt (this should happen frequently)
-    } else if (mpuIntStatus & 0x02) {
-        // wait for correct available data length, should be a VERY short wait
-        while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+            // otherwise, check for DMP data ready interrupt (this should happen frequently)
+        } else if (mpuIntStatus & 0x02) {
+            // wait for correct available data length, should be a VERY short wait
+            uint16_t fifoCount = mpu.getFIFOCount();
+            if (fifoCount >= packetSize) {
 
-        // read a packet from FIFO
-        mpu.getFIFOBytes(fifoBuffer, packetSize);
+                // read a packet from FIFO
+                mpu.getFIFOBytes(fifoBuffer, packetSize);
 
-        // track FIFO count here in case there is > 1 packet available
-        // (this lets us immediately read more without waiting for an interrupt)
-        fifoCount -= packetSize;
+                // track FIFO count here in case there is > 1 packet available
+                // (this lets us immediately read more without waiting for an interrupt)
+                fifoCount -= packetSize;
 
 #ifdef OUTPUT_READABLE_QUATERNION
-        // display quaternion values in easy matrix form: w x y z
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-//            Serial.print("quat\t");
-            //Serial.print(q.w);
-            //Serial.print("\t");
-            //Serial.print(q.x);
-            //Serial.print("\t");
-            //Serial.print(q.y);
-            //Serial.print("\t");
-            //Serial.println(q.z);
+                // display quaternion values in easy matrix form: w x y z
+                    mpu.dmpGetQuaternion(&q, fifoBuffer);
+        //            Serial.print("quat\t");
+                    //Serial.print(q.w);
+                    //Serial.print("\t");
+                    //Serial.print(q.x);
+                    //Serial.print("\t");
+                    //Serial.print(q.y);
+                    //Serial.print("\t");
+                    //Serial.println(q.z);
 #endif
 
 #ifdef OUTPUT_READABLE_EULER
-        // display Euler angles in degrees
-//            mpu.dmpGetQuaternion(&q, fifoBuffer);
-//            mpu.dmpGetEuler(euler, &q);
-            //Serial.print("euler\t");
-            //Serial.print(euler[0] * 180/M_PI);
-            //Serial.print("\t");
-            //Serial.print(euler[1] * 180/M_PI);
-            //Serial.print("\t");
-            //Serial.println(euler[2] * 180/M_PI);
+                // display Euler angles in degrees
+        //            mpu.dmpGetQuaternion(&q, fifoBuffer);
+        //            mpu.dmpGetEuler(euler, &q);
+                    //Serial.print("euler\t");
+                    //Serial.print(euler[0] * 180/M_PI);
+                    //Serial.print("\t");
+                    //Serial.print(euler[1] * 180/M_PI);
+                    //Serial.print("\t");
+                    //Serial.println(euler[2] * 180/M_PI);
 #endif
 
-#ifdef OUTPUT_READABLE_YAWPITCHROLL
-        // display Euler angles in degrees
-        mpu.dmpGetQuaternion(&q, fifoBuffer);
-        mpu.dmpGetGravity(&gravity, &q);
-        mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-//            //Serial.print("ypr\t");
-//            //Serial.println(ypr[0] * 180/M_PI);
-//            //Serial.print("\t");
-//            //Serial.print(ypr[1] * 180/M_PI);
-//            //Serial.print("\t");
-//            //Serial.println(ypr[2] * 180/M_PI);
-#endif
+                // display Euler angles in degrees
+                mpu.dmpGetQuaternion(&q, fifoBuffer);
+                mpu.dmpGetGravity(&gravity, &q);
+                mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
+                yaw_msg.data = ypr[0];
+                pub_yaw.publish(&yaw_msg);
 
+                pitch_msg.data = ypr[1];
+                pubPitch.publish(&pitch_msg);
 
-//        //Serial.print("y");
-//        //Serial.print(ypr[0] * 180/M_PI);
-//        //Serial.print("s");
-//        //Serial.print(deltatime); ///*0.0000000625 second
-//        //Serial.print("e"); 
-//        Serial.print((int)encoder_counter);
-//        Serial.print("\n");
+                roll_msg.data = ypr[2];
+                pubRoll.publish(&roll_msg);
 
-        yaw_msg.data = ypr[0];
-        pub_yaw.publish(&yaw_msg);
+                // if the motor has stopped we publish the speed when IMU data is rdy because this runs at 100hz
+                if (last_encoder_counter == encoder_counter) {
+                    // we did receive nothing so check if the motor has stopped
+                    if (T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10 > MAX_DELTATIME) {
+                        twist_msg.linear.x = 0.0;
+                        twist_msg.linear.y = 0.0;
+                        twist_msg.linear.z = 0.0;
 
-        pitch_msg.data = ypr[1];
-        pubPitch.publish(&pitch_msg);
+                        first_rising = true;
 
-        roll_msg.data = ypr[2];
-        pubRoll.publish(&roll_msg);
+                        pubTwist.publish(&twist_msg);
 
-        //revolution_msg.data = encoder_counter / 6.0;
-        //pubRevolutions.publish(&revolution_msg);
-
-        // we did receive data from the motor
-        if (last_encoder_counter != encoder_counter) {
-            if (deltatime != 0) {
-                //twist_msg.linear.y = deltatime;
-                //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
-                if (deltatime > 0) {
-                    twist_msg.linear.x = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
-                } else {
-                    twist_msg.linear.y = 0;
+                        deltatime = 0;
+                    }
                 }
             }
-
-            twist_msg.linear.x = twist_msg.linear.x * direction_motor;
-            twist_msg.linear.y = 0.0;
-            twist_msg.linear.z = 0.0;
-            pubTwist.publish(&twist_msg);
-        } else {
-            // we did receive nothing so check if the motor has stopped
-            if (T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10 > MAX_DELTATIME) {
-                twist_msg.linear.x = 0.0;
-                twist_msg.linear.y = 0.0;
-                twist_msg.linear.z = 0.0;
-
-                first_rising = true;
-
-                pubTwist.publish(&twist_msg);
-
-                deltatime = 0;
-            }
         }
-        last_encoder_counter = encoder_counter;
     }
+
+    // we did receive data from the motor
+    if (last_encoder_counter != encoder_counter) {
+        if (deltatime != 0) {
+            //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
+            twist_msg.linear.x = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
+        } else {
+            twist_msg.linear.x = 0.0;
+        }
+
+        twist_msg.linear.x = twist_msg.linear.x * direction_motor;
+        twist_msg.linear.y = 0.0;
+        twist_msg.linear.z = 0.0;
+        pubTwist.publish(&twist_msg);
+    }
+    last_encoder_counter = encoder_counter;
 
     nh.spinOnce();
 }
-
-
