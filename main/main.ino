@@ -30,12 +30,22 @@
 //#define TEST_COMMUNICATION_LATENCY
 
 #include <ros.h>
+#include <std_msgs/Bool.h>
 #include <std_msgs/Int8.h>
 #include <std_msgs/Int16.h>
 #include <std_msgs/UInt8.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/Twist.h>
+
+const char LED_TOPIC[]  PROGMEM  = { "led" };
+const char STEERING_TOPIC[]  PROGMEM  = { "steering" };
+const char SPEED_TOPIC[]  PROGMEM  = { "speed" };
+const char START_STOP_TOPIC[]  PROGMEM  = { "start_stop" };
+const char YAW_TOPIC[]  PROGMEM  = { "yaw" };
+const char ROLL_TOPIC[]  PROGMEM  = { "roll" };
+const char PITCH_TOPIC[]  PROGMEM  = { "pitch" };
+const char TWIST_TOPIC[]  PROGMEM  = { "twist" };
 
 ros::NodeHandle nh;
 
@@ -44,17 +54,21 @@ std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
 geometry_msgs::Twist twist_msg;
 
-ros::Publisher pub_yaw("yaw", &yaw_msg);
-ros::Publisher pubTwist("twist", &twist_msg);
-ros::Publisher pubRoll("roll", &roll_msg);
-ros::Publisher pubPitch("pitch", &pitch_msg);
+ros::Publisher pub_yaw(FCAST(YAW_TOPIC), &yaw_msg);
+ros::Publisher pubTwist(FCAST(TWIST_TOPIC), &twist_msg);
+ros::Publisher pubRoll(FCAST(ROLL_TOPIC), &roll_msg);
+ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
 
 void onLedCommand(const std_msgs::String &cmd_msg);
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg);
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg);
-ros::Subscriber<std_msgs::String> ledCommand("led", onLedCommand);
-ros::Subscriber<std_msgs::UInt8> steeringCommand("steering", onSteeringCommand);
-ros::Subscriber<std_msgs::Int16> speedCommand("speed", onSpeedCommand);
+void onStartStop(const std_msgs::Bool &cmd_msg);
+
+
+ros::Subscriber<std_msgs::String> ledCommand(FCAST(LED_TOPIC), onLedCommand);
+ros::Subscriber<std_msgs::UInt8> steeringCommand(FCAST(STEERING_TOPIC), onSteeringCommand);
+ros::Subscriber<std_msgs::Int16> speedCommand(FCAST(SPEED_TOPIC), onSpeedCommand);
+ros::Subscriber<std_msgs::Bool> startStopCommand(FCAST(START_STOP_TOPIC), onStartStop);
 
 #ifdef TEST_COMMUNICATION_LATENCY
 #include <std_msgs/Bool.h>
@@ -180,13 +194,13 @@ void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
         if (last_pw!=servo_pw) {
             myservo.writeMicroseconds(servo_pw);
         }
-        
+
         if (!servo_initialized) {
             // attaches the servo on pin 9 to the servo object
             myservo.attach(SERVO_PIN);
             servo_initialized = true;
         }
-        
+
         last_pw = servo_pw;
     }
 }
@@ -261,6 +275,10 @@ void onLedCommand(const std_msgs::String &cmd_msg){
     pixels.show(); // This sends the updated pixel color to the hardware.
 }
 
+void onStartStop(const std_msgs::Bool &cmd_msg) {
+
+}
+
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
@@ -275,6 +293,7 @@ void setup() {
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
     nh.subscribe(speedCommand);
+    nh.subscribe(startStopCommand);
 #ifdef TEST_COMMUNICATION_LATENCY
     nh.subscribe(requestCommand);
     nh.advertise(pubResponse);

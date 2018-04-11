@@ -476,11 +476,11 @@ namespace ros {
 	    
 	    if ( DefaultReadOutBuffer_::ReadoutFromFlashAttemptedButNotImplemented == error )
 	    {
-	      logerror( "Flash read not impl" );
+	      logerror(F("Flash read not impl"));
 	    }
 	    else if ( DefaultReadOutBuffer_::BufferOverflow == error )
 	    {
-	      logerror( "Buffer overflow pub" );
+	      logerror(F("Buffer overflow pub"));
 	    }
           }
         }
@@ -502,11 +502,11 @@ namespace ros {
 	    
 	    if ( DefaultReadOutBuffer_::ReadoutFromFlashAttemptedButNotImplemented == error )
 	    {
-	      logerror( "Flash read not impl" );
+	      logerror(F("Flash read not impl"));
 	    }
 	    else if ( DefaultReadOutBuffer_::BufferOverflow == error )
 	    {
-	      logerror( "Buffer overflow pub" );
+	      logerror(F("Buffer overflow pub"));
 	    }
 	  }
         }
@@ -542,7 +542,7 @@ namespace ros {
           hardware_.write(message_out, l);
           return l;
         }else{
-          logerror("Message from device dropped: message larger than buffer.");
+          logerror(F("Message from device dropped: message larger than buffer."));
           return -1;
         }
       }
@@ -573,7 +573,7 @@ namespace ros {
 	  
 	  if ( DefaultReadOutBuffer_::BufferOverflow == buffer.getError() )
 	  {
-	    logerror( "Overflow in log, truncated msg" );
+	    logerror(F("Overflow in log, truncated msg"));
 	  }
       }
 
@@ -625,7 +625,7 @@ namespace ros {
         while(!param_recieved ){
           spinOnce();
           if (hardware_.time() > end_time) {
-            logwarn("Failed to get param: timeout expired");
+            logwarn(F("Failed to get param: timeout expired"));
             return false;
           }
         }
@@ -641,7 +641,7 @@ namespace ros {
               param[i] = req_param_resp.ints[i];
             return true;
           } else {
-            logwarn("Failed to get param: length mismatch");
+            logwarn(F("Failed to get param: length mismatch"));
           }
         }
         return false;
@@ -654,7 +654,7 @@ namespace ros {
               param[i] = req_param_resp.floats[i];
             return true;
           } else {
-            logwarn("Failed to get param: length mismatch");
+            logwarn(F("Failed to get param: length mismatch"));
           }
         }
         return false;
@@ -667,7 +667,7 @@ namespace ros {
               strcpy(param[i],req_param_resp.strings[i]);
             return true;
           } else {
-            logwarn("Failed to get param: length mismatch");
+            logwarn(F("Failed to get param: length mismatch"));
           }
         }
         return false;
