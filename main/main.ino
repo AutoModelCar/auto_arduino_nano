@@ -109,6 +109,7 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ80
 Servo myservo; // create servo object to control a servo
 int servo_pw = 1500;    // variable to set the angle of servo motor
 int last_pw = 0;
+bool servo_initialized = false;
 volatile unsigned long T1Ovs2;
 volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
@@ -179,6 +180,13 @@ void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
         if (last_pw!=servo_pw) {
             myservo.writeMicroseconds(servo_pw);
         }
+        
+        if (!servo_initialized) {
+            // attaches the servo on pin 9 to the servo object
+            myservo.attach(SERVO_PIN);
+            servo_initialized = true;
+        }
+        
         last_pw = servo_pw;
     }
 }
@@ -257,7 +265,7 @@ void onLedCommand(const std_msgs::String &cmd_msg){
 // ===                      INITIAL SETUP                       ===
 // ================================================================
 void setup() {
-    nh.getHardware()->setBaud(1000000);
+    nh.getHardware()->setBaud(500000);
     nh.initNode();
     nh.advertise(pubTwist);
     nh.advertise(pub_yaw);
@@ -333,8 +341,6 @@ void setup() {
     pinMode(ENCODER_PIN, INPUT_PULLUP);
     digitalWrite(ENCODER_PIN, HIGH);             //pull up
     StartTimer2();
-    // attaches the servo on pin 9 to the servo object
-    myservo.attach(SERVO_PIN);
     attachInterrupt(digitalPinToInterrupt(ENCODER_PIN), encoder, RISING);
     pixels.begin(); // This initializes the NeoPixel library.
 }
