@@ -21,7 +21,6 @@
 
 #include <Servo.h>
 #define MAX_DELTATIME 20000
-#define analogPin 1
 #define DIR_PIN 4
 #define SERVO_PIN 10
 
@@ -41,7 +40,6 @@
 const char LED_TOPIC[]  PROGMEM  = { "led" };
 const char STEERING_TOPIC[]  PROGMEM  = { "steering" };
 const char SPEED_TOPIC[]  PROGMEM  = { "speed" };
-const char START_STOP_TOPIC[]  PROGMEM  = { "start_stop" };
 const char YAW_TOPIC[]  PROGMEM  = { "yaw" };
 const char ROLL_TOPIC[]  PROGMEM  = { "roll" };
 const char PITCH_TOPIC[]  PROGMEM  = { "pitch" };
@@ -62,13 +60,10 @@ ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
 void onLedCommand(const std_msgs::String &cmd_msg);
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg);
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg);
-void onStartStop(const std_msgs::Bool &cmd_msg);
-
 
 ros::Subscriber<std_msgs::String> ledCommand(FCAST(LED_TOPIC), onLedCommand);
 ros::Subscriber<std_msgs::UInt8> steeringCommand(FCAST(STEERING_TOPIC), onSteeringCommand);
 ros::Subscriber<std_msgs::Int16> speedCommand(FCAST(SPEED_TOPIC), onSpeedCommand);
-ros::Subscriber<std_msgs::Bool> startStopCommand(FCAST(START_STOP_TOPIC), onStartStop);
 
 #ifdef TEST_COMMUNICATION_LATENCY
 #include <std_msgs/Bool.h>
@@ -129,6 +124,7 @@ volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
 volatile unsigned long deltatime = 0;
 volatile boolean first_rising = true;
+bool motor_power = true;
 
 int8_t direction_motor = 1;
 
@@ -136,7 +132,7 @@ int8_t direction_motor = 1;
 bool dmpReady = false;  // set true if DMP init was successful
 uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
 uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
+uint8_t packetSize;    // expected DMP packet size (default is 42 bytes)
 uint16_t fifoCount;     // count of all bytes currently in FIFO
 uint8_t fifoBuffer[64]; // FIFO storage buffer
 
@@ -215,15 +211,15 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
     uint8_t servo_val = (uint8_t) abs(motor_val);
 
     if (motor_val < 0) {
-        digitalWrite(DIR_PIN, LOW);
-        direction_motor = 1;
-
-    } else {
         digitalWrite(DIR_PIN, HIGH);
         direction_motor = -1;
+
+    } else {
+        digitalWrite(DIR_PIN, LOW);
+        direction_motor = 1;
     }
 
-    if (servo_val < 15) {
+    if (servo_val < 15 && motor_power) {
         servo_val = 15;
     }
 
@@ -275,10 +271,6 @@ void onLedCommand(const std_msgs::String &cmd_msg){
     pixels.show(); // This sends the updated pixel color to the hardware.
 }
 
-void onStartStop(const std_msgs::Bool &cmd_msg) {
-
-}
-
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
@@ -293,7 +285,6 @@ void setup() {
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
     nh.subscribe(speedCommand);
-    nh.subscribe(startStopCommand);
 #ifdef TEST_COMMUNICATION_LATENCY
     nh.subscribe(requestCommand);
     nh.advertise(pubResponse);
