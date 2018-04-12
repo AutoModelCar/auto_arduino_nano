@@ -128,7 +128,6 @@ volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
 volatile unsigned long deltatime = 0;
 volatile boolean first_rising = true;
-bool motor_power = true;
 
 int8_t direction_motor = 1;
 
@@ -214,16 +213,18 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
 
     uint8_t servo_val = (uint8_t) abs(motor_val);
 
+    // if speed is set to 0 we keep the old direction
+    // and just do nothing but set the val
+    // else the speed direction might get inversed 
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, HIGH);
         direction_motor = -1;
-
-    } else {
+    } else if (motor_val > 0) {
         digitalWrite(DIR_PIN, LOW);
         direction_motor = 1;
     }
 
-    if (servo_val < 15 && motor_power) {
+    if (servo_val < 15) {
         servo_val = 15;
     }
 
@@ -233,44 +234,31 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
 #if NUMPIXELS == 8
 /* Control lights */
 /*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
-void onLedCommand(const std_msgs::String &cmd_msg){
-    if (strcmp_P(cmd_msg.data, PSTR("Lle")) == 0)
-    {
-        pixels.setPixelColor(0, pixels.Color(255,80,0)); //yellow
-        pixels.setPixelColor(7, pixels.Color(255,80,0)); //yellow
-    }
-    else if (strcmp_P(cmd_msg.data, PSTR("Lri")) == 0)
-    {
-        pixels.setPixelColor(3, pixels.Color(255,80,0)); //yellow
-        pixels.setPixelColor(4, pixels.Color(255,80,0)); //yellow
-    }
-    else if (strcmp_P(cmd_msg.data, PSTR("Lstop")) == 0)
-    {
-        for (uint8_t i=4;i<8;i++)
-            pixels.setPixelColor(i, pixels.Color(255,0,0)); //red
-    }
-    else if (strcmp_P(cmd_msg.data, PSTR("Lpa")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0)
-    {
-        for (uint8_t i=0;i<4;i++)
-            pixels.setPixelColor(i, pixels.Color(50,50,50)); //white (darker)
+void onLedCommand(const std_msgs::String &cmd_msg) {
+    if (strcmp_P(cmd_msg.data, PSTR("Lle")) == 0) {
+        pixels.setPixelColor(0, pixels.Color(255, 80, 0)); //yellow
+        pixels.setPixelColor(7, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lri")) == 0) {
+        pixels.setPixelColor(3, pixels.Color(255, 80, 0)); //yellow
+        pixels.setPixelColor(4, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lstop")) == 0) {
+        for (uint8_t i = 4; i < 8; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lpa")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0) {
+        for (uint8_t i = 0; i < 4; i++)
+            pixels.setPixelColor(i, pixels.Color(50, 50, 50)); //white (darker)
 
-        for (uint8_t i=4;i<8;i++)
-            pixels.setPixelColor(i, pixels.Color(50,0,0)); //red (darker)
+        for (uint8_t i = 4; i < 8; i++)
+            pixels.setPixelColor(i, pixels.Color(50, 0, 0)); //red (darker)
 
-    }
-    else if (strcmp_P(cmd_msg.data, PSTR("Lre")) == 0)
-    {
-        pixels.setPixelColor(5, pixels.Color(50,50,50)); //white (darker)
-    }
-    else if (strcmp_P(cmd_msg.data, PSTR("Lfr")) == 0)
-    {
-        for (uint8_t i=0;i<4;i++)
-            pixels.setPixelColor(i, pixels.Color(255,255,255)); //white
-    }
-    else if (strcmp_P(cmd_msg.data, PSTR("LdiL")) == 0)
-    {
-        for (uint8_t i=0;i<8;i++)
-            pixels.setPixelColor(i, pixels.Color(0,0,0)); //disable
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lre")) == 0) {
+        pixels.setPixelColor(5, pixels.Color(50, 50, 50)); //white (darker)
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lfr")) == 0) {
+        for (uint8_t i = 0; i < 4; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 255, 255)); //white
+    } else if (strcmp_P(cmd_msg.data, PSTR("LdiL")) == 0) {
+        for (uint8_t i = 0; i < 8; i++)
+            pixels.setPixelColor(i, pixels.Color(0, 0, 0)); //disable
     }
     pixels.show(); // This sends the updated pixel color to the hardware.
 }
@@ -284,9 +272,10 @@ void onLedCommand(const std_msgs::String &cmd_msg) {
     } else if (strcmp_P(cmd_msg.data, PSTR("Lri")) == 0) {
         for (uint8_t i = 7; i < 10; i++)
             pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
-    } else if (strcmp_P(cmd_msg.data, "Lstop") == 0) {
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lstop")) == 0) {
         for (uint8_t i = 10; i < 13; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
+
         for (uint8_t i = 18; i < 21; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
     } else if (strcmp_P(cmd_msg.data, PSTR("Lpa")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0) {
