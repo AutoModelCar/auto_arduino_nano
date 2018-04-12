@@ -3,15 +3,15 @@
 #include "I2Cdev.h"
 #include <avr/pgmspace.h>
 #if __CLION_IDE__
-#include "MPU6050/MPU6050.h" // not necessary if using MotionApps include file
 #include "MPU6050/MPU6050_6Axis_MotionApps20.h"
+#include "MPU6050/MPU6050.h" // not necessary if using MotionApps include file
 #else
 #include "MPU6050_6Axis_MotionApps20.h"
 #endif
-
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
 #include "Wire.h"
 #endif
+
 
 #include <Adafruit_NeoPixel.h>
 // Which pin on the Arduino is connected to the NeoPixels?
