@@ -15,9 +15,9 @@
 
 #include <Adafruit_NeoPixel.h>
 // Which pin on the Arduino is connected to the NeoPixels?
-#define PIN            6
+#define LED_PIN 6
 // How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS      21
+#define NUMPIXELS 21
 
 #include <Servo.h>
 #define MAX_DELTATIME 20000
@@ -28,8 +28,6 @@
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
 //#define TEST_COMMUNICATION_LATENCY
 #define SERVO_FEEDBACK_MOTOR_PIN 0
-#define SERVO_MOTOR_LEFT_VALUE 207
-#define SERVO_MOTOR_RIGHT_VALUE 408
 
 #include <ros.h>
 #include <std_msgs/Bool.h>
@@ -54,18 +52,14 @@ ros::NodeHandle nh;
 std_msgs::Float32 yaw_msg;
 std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
-#ifdef SERVO_FEEDBACK_MOTOR_PIN
 std_msgs::Float32 steering_msg;
-#endif
 geometry_msgs::Twist twist_msg;
 
 ros::Publisher pub_yaw(FCAST(YAW_TOPIC), &yaw_msg);
 ros::Publisher pubTwist(FCAST(TWIST_TOPIC), &twist_msg);
 ros::Publisher pubRoll(FCAST(ROLL_TOPIC), &roll_msg);
 ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
-#ifdef SERVO_FEEDBACK_MOTOR_PIN
 ros::Publisher pubSteeringAngle(FCAST(STEERING_ANGLE_TOPIC), &steering_msg);
-#endif
 
 void onLedCommand(const std_msgs::String &cmd_msg);
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg);
@@ -124,7 +118,7 @@ MPU6050 mpu;
 //#define OUTPUT_TEAPOT
 
 // When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
 Servo myservo; // create servo object to control a servo
 int servo_pw = 1500;    // variable to set the angle of servo motor
 int last_pw = 0;
@@ -236,7 +230,7 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
     OCR2A = servo_val;
 }
 
-
+#if NUMPIXELS == 8
 /* Control lights */
 /*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
 void onLedCommand(const std_msgs::String &cmd_msg){
@@ -280,6 +274,37 @@ void onLedCommand(const std_msgs::String &cmd_msg){
     }
     pixels.show(); // This sends the updated pixel color to the hardware.
 }
+#endif
+
+#if NUMPIXELS == 21
+void onLedCommand(const std_msgs::String &cmd_msg) {
+    if (strcmp_P(cmd_msg.data, PSTR("Lle")) == 0) {
+        for (uint8_t i = 0; i < 3; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lri")) == 0) {
+        for (uint8_t i = 7; i < 10; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg.data, "Lstop") == 0) {
+        for (uint8_t i = 10; i < 13; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
+        for (uint8_t i = 18; i < 21; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lpa")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0) {
+        for (uint8_t i = 10; i < 21; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 255, 255)); //white
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lre")) == 0) {
+        for (uint8_t i = 10; i < 21; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
+    } else if (strcmp_P(cmd_msg.data, PSTR("Lfr")) == 0) {
+        for (uint8_t i = 0; i < 10; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 255, 255)); //white
+    } else if (strcmp_P(cmd_msg.data, PSTR("LdiL")) == 0) {
+        for (uint8_t i = 0; i < 21; i++)
+            pixels.setPixelColor(i, pixels.Color(0, 0, 0)); //disable
+    }
+    pixels.show(); // This sends the updated pixel color to the hardware.
+}
+#endif
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -291,9 +316,7 @@ void setup() {
     nh.advertise(pub_yaw);
     nh.advertise(pubRoll);
     nh.advertise(pubPitch);
-#ifdef SERVO_FEEDBACK_MOTOR_PIN
     nh.advertise(pubSteeringAngle);
-#endif
 
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
@@ -463,11 +486,8 @@ void loop() {
                     }
                 }
 
-#ifdef SERVO_FEEDBACK_MOTOR_PIN
-                int servo_feedback = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
-                steering_msg.data = map(servo_feedback, SERVO_MOTOR_LEFT_VALUE, SERVO_MOTOR_RIGHT_VALUE, 0, 180);
+                steering_msg.data = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
                 pubSteeringAngle.publish(&steering_msg);
-#endif
             }
         }
     }
