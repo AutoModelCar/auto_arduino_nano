@@ -27,6 +27,9 @@
 #define ENCODER_PIN 3
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
 //#define TEST_COMMUNICATION_LATENCY
+#define SERVO_FEEDBACK_MOTOR_PIN 0
+#define SERVO_MOTOR_LEFT_VALUE 207
+#define SERVO_MOTOR_RIGHT_VALUE 408
 
 #include <ros.h>
 #include <std_msgs/Bool.h>
@@ -44,18 +47,25 @@ const char YAW_TOPIC[]  PROGMEM  = { "yaw" };
 const char ROLL_TOPIC[]  PROGMEM  = { "roll" };
 const char PITCH_TOPIC[]  PROGMEM  = { "pitch" };
 const char TWIST_TOPIC[]  PROGMEM  = { "twist" };
+const char STEERING_ANGLE_TOPIC[]  PROGMEM  = { "steering_angle" };
 
 ros::NodeHandle nh;
 
 std_msgs::Float32 yaw_msg;
 std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
+#ifdef SERVO_FEEDBACK_MOTOR_PIN
+std_msgs::Float32 steering_msg;
+#endif
 geometry_msgs::Twist twist_msg;
 
 ros::Publisher pub_yaw(FCAST(YAW_TOPIC), &yaw_msg);
 ros::Publisher pubTwist(FCAST(TWIST_TOPIC), &twist_msg);
 ros::Publisher pubRoll(FCAST(ROLL_TOPIC), &roll_msg);
 ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
+#ifdef SERVO_FEEDBACK_MOTOR_PIN
+ros::Publisher pubSteeringAngle(FCAST(STEERING_ANGLE_TOPIC), &steering_msg);
+#endif
 
 void onLedCommand(const std_msgs::String &cmd_msg);
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg);
@@ -281,6 +291,9 @@ void setup() {
     nh.advertise(pub_yaw);
     nh.advertise(pubRoll);
     nh.advertise(pubPitch);
+#ifdef SERVO_FEEDBACK_MOTOR_PIN
+    nh.advertise(pubSteeringAngle);
+#endif
 
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
@@ -449,6 +462,12 @@ void loop() {
                         deltatime = 0;
                     }
                 }
+
+#ifdef SERVO_FEEDBACK_MOTOR_PIN
+                int servo_feedback = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
+                steering_msg.data = map(servo_feedback, SERVO_MOTOR_LEFT_VALUE, SERVO_MOTOR_RIGHT_VALUE, 0, 180);
+                pubSteeringAngle.publish(&steering_msg);
+#endif
             }
         }
     }
