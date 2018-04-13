@@ -34,6 +34,7 @@
 #include <std_msgs/Int8.h>
 #include <std_msgs/Int16.h>
 #include <std_msgs/UInt8.h>
+#include <std_msgs/UInt16.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/Twist.h>
@@ -52,7 +53,7 @@ ros::NodeHandle nh;
 std_msgs::Float32 yaw_msg;
 std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
-std_msgs::Float32 steering_msg;
+std_msgs::UInt16 steering_msg;
 geometry_msgs::Twist twist_msg;
 
 ros::Publisher pub_yaw(FCAST(YAW_TOPIC), &yaw_msg);
@@ -215,7 +216,7 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
 
     // if speed is set to 0 we keep the old direction
     // and just do nothing but set the val
-    // else the speed direction might get inversed 
+    // else the speed direction might get inversed
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, HIGH);
         direction_motor = -1;
