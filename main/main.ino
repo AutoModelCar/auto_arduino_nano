@@ -172,6 +172,7 @@ ISR(TIMER2_OVF_vect) {
 }
 
 void encoder() {
+    cli();
     if (!first_rising) {
         deltatime = T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10;// prevent overflow of integer number!
     }
@@ -180,6 +181,7 @@ void encoder() {
     TCNT2 = 0;
     first_rising = false;
     encoder_counter++;
+    sei();
 }
 
 
@@ -475,28 +477,27 @@ void loop() {
                         deltatime = 0;
                     }
                 }
+                // we did receive data from the motor
+                else {
+                    if (deltatime != 0) {
+                        //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
+                        twist_msg.linear.x = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
+                    } else {
+                        twist_msg.linear.x = 0.0;
+                    }
+
+                    twist_msg.linear.x = twist_msg.linear.x * direction_motor;
+                    twist_msg.linear.y = 0.0;
+                    twist_msg.linear.z = 0.0;
+                    pubTwist.publish(&twist_msg);
+                }
+                last_encoder_counter = encoder_counter;
 
                 steering_msg.data = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
                 pubSteeringAngle.publish(&steering_msg);
             }
         }
     }
-
-    // we did receive data from the motor
-    if (last_encoder_counter != encoder_counter) {
-        if (deltatime != 0) {
-            //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
-            twist_msg.linear.x = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
-        } else {
-            twist_msg.linear.x = 0.0;
-        }
-
-        twist_msg.linear.x = twist_msg.linear.x * direction_motor;
-        twist_msg.linear.y = 0.0;
-        twist_msg.linear.z = 0.0;
-        pubTwist.publish(&twist_msg);
-    }
-    last_encoder_counter = encoder_counter;
 
     nh.spinOnce();
 }
