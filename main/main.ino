@@ -28,7 +28,6 @@
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
 //#define TEST_COMMUNICATION_LATENCY
 #define SERVO_FEEDBACK_MOTOR_PIN 0
-#define MILLISECONDS_PER_SERVO_CHANGE 2
 
 #include <ros.h>
 #include <std_msgs/Bool.h>
@@ -122,9 +121,8 @@ MPU6050 mpu;
 // When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
 Servo myservo; // create servo object to control a servo
-int desired_servo_angle = 1500;    // variable to set the angle of servo motor
-int current_servo_angle = 0;
-unsigned long last_servo_angle_command_time = 0;
+int servo_pw = 1500;    // variable to set the angle of servo motor
+int last_pw = 0;
 bool servo_initialized = false;
 volatile unsigned long T1Ovs2;
 volatile int16_t encoder_counter;              //CAPTURE FLAG
@@ -191,17 +189,19 @@ void encoder() {
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
     if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0)) {
         // scale it to use it with the servo (value between 0 and 180)
-        desired_servo_angle = map(cmd_msg.data, 0, 180, 900, 1900);
+        servo_pw = map(cmd_msg.data, 0, 180, 900, 1900);
+
+        if (last_pw!=servo_pw) {
+            myservo.writeMicroseconds(servo_pw);
+        }
 
         if (!servo_initialized) {
-            // we dont know where the servo motor currently is so write directly
-            myservo.writeMicroseconds(desired_servo_angle);
-
             // attaches the servo on pin 9 to the servo object
             myservo.attach(SERVO_PIN);
             servo_initialized = true;
-            current_servo_angle = desired_servo_angle;
         }
+
+        last_pw = servo_pw;
     }
 }
 
@@ -479,21 +479,6 @@ void loop() {
                 steering_msg.data = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
                 pubSteeringAngle.publish(&steering_msg);
             }
-        }
-    }
-
-    // move motor slowly so we don't consume too much power
-    if (current_servo_angle > desired_servo_angle) {
-        unsigned long current_time = millis();
-        if (labs(current_time - last_servo_angle_command_time) > MILLISECONDS_PER_SERVO_CHANGE) {
-            myservo.writeMicroseconds(--current_servo_angle);
-            last_servo_angle_command_time = current_time;
-        }
-    } else if (current_servo_angle < desired_servo_angle) {
-        unsigned long current_time = millis();
-        if (labs(current_time - last_servo_angle_command_time) > MILLISECONDS_PER_SERVO_CHANGE) {
-            myservo.writeMicroseconds(++current_servo_angle);
-            last_servo_angle_command_time = current_time;
         }
     }
 
