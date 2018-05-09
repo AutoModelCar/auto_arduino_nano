@@ -140,7 +140,7 @@ void setup() {
    
   // initialize serial:
   Serial.begin(115200);
-  //myservo.writeMicroseconds(servo_pw);
+  myservo.writeMicroseconds(servo_pw);
   
   // reserve 200 bytes for the inputString:
   inputLight.reserve(100);
@@ -380,7 +380,7 @@ void servoControl(){
       val=inputServo.toInt();
       if ((val<=180) && (val>=0))
       {
-        servo_pw = map(val, 0, 180, 700, 1900);     // scale it to use it with the servo (value between 0 and 180)
+        servo_pw = map(val, 0, 180, 900, 2100);     // scale it to use it with the servo (value between 0 and 180)
         //if (last_pw!=servo_pw)
           myservo.writeMicroseconds(servo_pw); 
         last_pw=servo_pw; 
