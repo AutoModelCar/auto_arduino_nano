@@ -15,13 +15,11 @@
 Servo myservo;  // create servo object to control a servo
 int state =0;
 
-int potpin = 0;  // analog pin used to connect the potentiometer
 int val=90;
 int servo_pw=1500;    // variable to read the value from the analog pin
 int last_pw=0;
 const char* lastLight;
 boolean interrupt_flag=false;
-boolean servo_control=false;
 boolean ledState=false;
 boolean flashingLedState=false;
 boolean startFlashing=false;
@@ -123,9 +121,6 @@ uint8_t fifoBuffer[64]; // FIFO storage buffer
 
 // orientation/motion vars
 Quaternion q;           // [w, x, y, z]         quaternion container
-VectorInt16 aa;         // [x, y, z]            accel sensor measurements
-VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
-VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
 VectorFloat gravity;    // [x, y, z]            gravity vector
 float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
@@ -263,7 +258,7 @@ void checkBattery()
         }
         if (battery_voltage<740) //14.5 volt
         {
-            nh.loginfo("Please charge the Battery!");
+            nh.logerror("Please charge the Battery!");
             startFlashing==false;
             digitalWrite(LED_STATUS_EN, LOW);
             digitalWrite(POWER_STATE_D0, LOW);
@@ -530,37 +525,35 @@ void loop() {
             // otherwise, check for DMP data ready interrupt (this should happen frequently)
         } else if (mpuIntStatus & 0x02) {
             // wait for correct available data length, should be a VERY short wait
-            while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+            if (fifoCount < packetSize) {
+                fifoCount = mpu.getFIFOCount();
 
-            // read a packet from FIFO
-            mpu.getFIFOBytes(fifoBuffer, packetSize);
+                // read a packet from FIFO
+                mpu.getFIFOBytes(fifoBuffer, packetSize);
 
-            // track FIFO count here in case there is > 1 packet available
-            // (this lets us immediately read more without waiting for an interrupt)
-            fifoCount -= packetSize;
+                // track FIFO count here in case there is > 1 packet available
+                // (this lets us immediately read more without waiting for an interrupt)
+                fifoCount -= packetSize;
 
 #ifdef OUTPUT_READABLE_YAWPITCHROLL
-            // display Euler angles in degrees
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-            mpu.dmpGetGravity(&gravity, &q);
-            mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+                // display Euler angles in degrees
+                mpu.dmpGetQuaternion(&q, fifoBuffer);
+                mpu.dmpGetGravity(&gravity, &q);
+                mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
-            yaw_msg.data = ypr[0];
-            pubYaw.publish(&yaw_msg);
+                yaw_msg.data = ypr[0];
+                pubYaw.publish(&yaw_msg);
 
-            pitch_msg.data = ypr[1];
-            pubPitch.publish(&pitch_msg);
+                pitch_msg.data = ypr[1];
+                pubPitch.publish(&pitch_msg);
 
-            roll_msg.data = ypr[2];
-            pubRoll.publish(&roll_msg);
+                roll_msg.data = ypr[2];
+                pubRoll.publish(&roll_msg);
 #endif
+            }
         }
     }
     checkBattery();
     turnOffCar();
     nh.spinOnce();
 }
-
-
-
-
