@@ -191,7 +191,7 @@ void encoder() {
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
     if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0)) {
         // scale it to use it with the servo (value between 0 and 180)
-        servo_pw = map(cmd_msg.data, 0, 180, 900, 1900);
+        servo_pw = map(cmd_msg.data, 0, 180, 950, 2050);
 
         if (last_pw!=servo_pw) {
             myservo.writeMicroseconds(servo_pw);
