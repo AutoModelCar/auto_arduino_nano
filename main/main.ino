@@ -508,7 +508,7 @@ void loop() {
     if (interrupt_flag==true)
         powerBoard();
     // wait for MPU interrupt or extra packet(s) available
-    if (!mpuInterrupt || fifoCount >= packetSize) {
+    if (mpuInterrupt || fifoCount >= packetSize) {
         // reset interrupt flag and get INT_STATUS byte
         mpuInterrupt = false;
         mpuIntStatus = mpu.getIntStatus();
