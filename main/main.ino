@@ -379,7 +379,7 @@ void servoControl(){
       val=inputServo.toInt();
       if ((val<=180) && (val>=0))
       {
-        servo_pw = map(val, 0, 180, 900, 1900);     // scale it to use it with the servo (value between 0 and 180)
+        servo_pw = map(val, 0, 180, 1000, 2000);     // scale it to use it with the servo (value between 0 and 180)
         //if (last_pw!=servo_pw)
           myservo.writeMicroseconds(servo_pw); 
         last_pw=servo_pw; 
