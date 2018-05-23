@@ -63,11 +63,11 @@ ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
 ros::Publisher pubSteeringAngle(FCAST(STEERING_ANGLE_TOPIC), &steering_msg);
 
 void onLedCommand(const std_msgs::String &cmd_msg);
-void onSteeringCommand(const std_msgs::UInt8 &cmd_msg);
+void onSteeringCommand(const std_msgs::UInt16 &cmd_msg);
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg);
 
 ros::Subscriber<std_msgs::String> ledCommand(FCAST(LED_TOPIC), onLedCommand);
-ros::Subscriber<std_msgs::UInt8> steeringCommand(FCAST(STEERING_TOPIC), onSteeringCommand);
+ros::Subscriber<std_msgs::UInt16> steeringCommand(FCAST(STEERING_TOPIC), onSteeringCommand);
 ros::Subscriber<std_msgs::Int16> speedCommand(FCAST(SPEED_TOPIC), onSpeedCommand);
 
 #ifdef TEST_COMMUNICATION_LATENCY
@@ -188,23 +188,21 @@ void encoder() {
 // ================================================================
 // ===               SUBSCRIBERS                                ===
 // ================================================================
-void onSteeringCommand(const std_msgs::UInt8 &cmd_msg) {
-    if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0)) {
-        // scale it to use it with the servo (value between 0 and 180)
-        servo_pw = map(cmd_msg.data, 0, 180, 950, 2050);
+void onSteeringCommand(const std_msgs::UInt16 &cmd_msg) {
+    // scale it to use it with the servo (value between 0 and 180)
+    servo_pw = cmd_msg.data;
 
-        if (last_pw!=servo_pw) {
-            myservo.writeMicroseconds(servo_pw);
-        }
-
-        if (!servo_initialized) {
-            // attaches the servo on pin 9 to the servo object
-            myservo.attach(SERVO_PIN);
-            servo_initialized = true;
-        }
-
-        last_pw = servo_pw;
+    if (last_pw != servo_pw) {
+        myservo.writeMicroseconds(servo_pw);
     }
+
+    if (!servo_initialized) {
+        // attaches the servo on pin 9 to the servo object
+        myservo.attach(SERVO_PIN);
+        servo_initialized = true;
+    }
+
+    last_pw = servo_pw;
 }
 
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
@@ -477,7 +475,7 @@ void loop() {
                         deltatime = 0;
                     }
                 }
-                // we did receive data from the motor
+                    // we did receive data from the motor
                 else {
                     if (deltatime != 0) {
                         //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
@@ -501,3 +499,4 @@ void loop() {
 
     nh.spinOnce();
 }
+
