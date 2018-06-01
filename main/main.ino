@@ -47,6 +47,7 @@ const char ROLL_TOPIC[]  PROGMEM  = { "roll" };
 const char PITCH_TOPIC[]  PROGMEM  = { "pitch" };
 const char TWIST_TOPIC[]  PROGMEM  = { "twist" };
 const char STEERING_ANGLE_TOPIC[]  PROGMEM  = { "steering_angle" };
+const char TICKS_TOPIC[]  PROGMEM  = { "ticks" };
 
 ros::NodeHandle nh;
 
@@ -54,6 +55,7 @@ std_msgs::Float32 yaw_msg;
 std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
 std_msgs::UInt16 steering_msg;
+std_msgs::UInt16 ticks_msg;
 geometry_msgs::Twist twist_msg;
 
 ros::Publisher pub_yaw(FCAST(YAW_TOPIC), &yaw_msg);
@@ -61,6 +63,7 @@ ros::Publisher pubTwist(FCAST(TWIST_TOPIC), &twist_msg);
 ros::Publisher pubRoll(FCAST(ROLL_TOPIC), &roll_msg);
 ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
 ros::Publisher pubSteeringAngle(FCAST(STEERING_ANGLE_TOPIC), &steering_msg);
+ros::Publisher pubTicks(FCAST(TICKS_TOPIC), &ticks_msg);
 
 void onLedCommand(const std_msgs::String &cmd_msg);
 void onSteeringCommand(const std_msgs::UInt8 &cmd_msg);
@@ -126,6 +129,7 @@ int last_pw = 0;
 bool servo_initialized = false;
 volatile unsigned long T1Ovs2;
 volatile int16_t encoder_counter;              //CAPTURE FLAG
+volatile uint16_t ticks_counter;
 volatile int16_t last_encoder_counter;
 volatile unsigned long deltatime = 0;
 volatile boolean first_rising = true;
@@ -181,6 +185,7 @@ void encoder() {
     TCNT2 = 0;
     first_rising = false;
     encoder_counter++;
+    ticks_counter++;
     sei();
 }
 
@@ -309,6 +314,7 @@ void setup() {
     nh.advertise(pubRoll);
     nh.advertise(pubPitch);
     nh.advertise(pubSteeringAngle);
+    nh.advertise(pubTicks);
 
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
@@ -477,7 +483,7 @@ void loop() {
                         deltatime = 0;
                     }
                 }
-                // we did receive data from the motor
+                    // we did receive data from the motor
                 else {
                     if (deltatime != 0) {
                         //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
@@ -495,6 +501,10 @@ void loop() {
 
                 steering_msg.data = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
                 pubSteeringAngle.publish(&steering_msg);
+
+                ticks_msg.data = ticks_counter;
+                ticks_counter = 0;
+                pubTicks.publish(&ticks_msg);
             }
         }
     }
