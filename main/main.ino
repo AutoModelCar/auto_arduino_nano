@@ -29,6 +29,19 @@
 //#define TEST_COMMUNICATION_LATENCY
 #define SERVO_FEEDBACK_MOTOR_PIN 0
 
+//Voltmeter
+#define NEWLED_PIN 13
+#define BATTERY_PIN A6
+#define ENABLE_PIN 7
+int ledState = HIGH;                // ledState used to set the LED
+unsigned long previousMillis = 0;   // will store last time LED was updated
+const float referenceVolts = 4.7; //Default reference on Teensy is 3.3V
+const float R1 = 3700.0;
+const float R2 = 1490.0;
+unsigned int interval = 300;           // interval at which to blink (milliseconds)
+float measuredVoltage;
+unsigned long enableCounter;
+
 #include <ros.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/Int8.h>
@@ -38,6 +51,9 @@
 #include <std_msgs/Float32.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/Twist.h>
+#include <Streaming.h>
+
+
 
 const char LED_TOPIC[]  PROGMEM  = { "led" };
 const char STEERING_TOPIC[]  PROGMEM  = { "steering" };
@@ -47,6 +63,7 @@ const char ROLL_TOPIC[]  PROGMEM  = { "roll" };
 const char PITCH_TOPIC[]  PROGMEM  = { "pitch" };
 const char TWIST_TOPIC[]  PROGMEM  = { "twist" };
 const char STEERING_ANGLE_TOPIC[]  PROGMEM  = { "steering_angle" };
+const char VOLTAGE_TOPIC[]  PROGMEM  = { "voltage" };
 
 ros::NodeHandle nh;
 
@@ -55,12 +72,14 @@ std_msgs::Float32 pitch_msg;
 std_msgs::Float32 roll_msg;
 std_msgs::UInt16 steering_msg;
 geometry_msgs::Twist twist_msg;
+std_msgs::Float32 voltage_msg;
 
 ros::Publisher pub_yaw(FCAST(YAW_TOPIC), &yaw_msg);
 ros::Publisher pubTwist(FCAST(TWIST_TOPIC), &twist_msg);
 ros::Publisher pubRoll(FCAST(ROLL_TOPIC), &roll_msg);
 ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
 ros::Publisher pubSteeringAngle(FCAST(STEERING_ANGLE_TOPIC), &steering_msg);
+ros::Publisher pubVoltage(FCAST(VOLTAGE_TOPIC), &voltage_msg);
 
 void onLedCommand(const std_msgs::String &cmd_msg);
 void onSteeringCommand(const std_msgs::UInt16 &cmd_msg);
@@ -190,19 +209,23 @@ void encoder() {
 // ================================================================
 void onSteeringCommand(const std_msgs::UInt16 &cmd_msg) {
     // scale it to use it with the servo (value between 0 and 180)
-    servo_pw = cmd_msg.data;
-
-    if (last_pw != servo_pw) {
-        myservo.writeMicroseconds(servo_pw);
+    if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0)) 
+    {
+        // scale it to use it with the servo (value between 0 and 180)
+        servo_pw = map(cmd_msg.data, 0, 180, 950, 2050);
+    
+        if (last_pw != servo_pw) {
+            myservo.writeMicroseconds(servo_pw);
+        }
+    
+        if (!servo_initialized) {
+            // attaches the servo on pin 9 to the servo object
+            myservo.attach(SERVO_PIN);
+            servo_initialized = true;
+        }
+    
+        last_pw = servo_pw;
     }
-
-    if (!servo_initialized) {
-        // attaches the servo on pin 9 to the servo object
-        myservo.attach(SERVO_PIN);
-        servo_initialized = true;
-    }
-
-    last_pw = servo_pw;
 }
 
 void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
@@ -307,6 +330,7 @@ void setup() {
     nh.advertise(pubRoll);
     nh.advertise(pubPitch);
     nh.advertise(pubSteeringAngle);
+    nh.advertise(pubVoltage);
 
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
@@ -379,6 +403,9 @@ void setup() {
     StartTimer2();
     attachInterrupt(digitalPinToInterrupt(ENCODER_PIN), encoder, RISING);
     pixels.begin(); // This initializes the NeoPixel library.
+    //Voltmeter
+    pinMode(NEWLED_PIN, OUTPUT);
+    digitalWrite(ENABLE_PIN, LOW);
 }
 
 
@@ -497,6 +524,49 @@ void loop() {
         }
     }
 
+    /***Voltmeter**/
+    
+    int value = analogRead(BATTERY_PIN);
+    int enable_pin_status = LOW;
+    float vout = (value * referenceVolts) / 1024.0;
+    measuredVoltage = vout / (R2/(R1+R2)); 
+    
+    //Check voltage, if it is below 13V then the indicator start blinking before turning off
+    if (measuredVoltage > 14.0){
+      unsigned long enableCounter_now = millis();
+      unsigned long dt = enableCounter_now - enableCounter;
+         
+      if (dt > 3000){
+      enable_pin_status = HIGH;
+      ledState = HIGH;
+      }
+      else
+      enable_pin_status = LOW;
+    }
+    else{ 
+      enableCounter = millis();
+      enable_pin_status = LOW;
+    }
+
+    if ((measuredVoltage <= 14.5))
+    {
+      unsigned long currentMillis = millis();
+      if(currentMillis - previousMillis > interval) 
+      {
+        // save the last time you blinked the LED 
+        previousMillis = currentMillis;   
+  
+        // if the LED is off turn it on and vice-versa:
+        if (ledState == LOW)
+          ledState = HIGH;
+        else
+          ledState = LOW;
+      }   
+    }
+    digitalWrite(ENABLE_PIN, enable_pin_status);
+    digitalWrite(NEWLED_PIN, ledState);
+    voltage_msg.data = measuredVoltage;
+    pubVoltage.publish(&voltage_msg);
+
     nh.spinOnce();
 }
-
