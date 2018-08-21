@@ -51,9 +51,6 @@ unsigned long enableCounter;
 #include <std_msgs/Float32.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/Twist.h>
-#include <Streaming.h>
-
-
 
 const char LED_TOPIC[]  PROGMEM  = { "led" };
 const char STEERING_TOPIC[]  PROGMEM  = { "steering" };
@@ -89,53 +86,7 @@ ros::Subscriber<std_msgs::String> ledCommand(FCAST(LED_TOPIC), onLedCommand);
 ros::Subscriber<std_msgs::UInt16> steeringCommand(FCAST(STEERING_TOPIC), onSteeringCommand);
 ros::Subscriber<std_msgs::Int16> speedCommand(FCAST(SPEED_TOPIC), onSpeedCommand);
 
-#ifdef TEST_COMMUNICATION_LATENCY
-#include <std_msgs/Bool.h>
-std_msgs::Bool resp_msg;
-
-ros::Publisher pubResponse("resp", &resp_msg);
-void onLatency(const std_msgs::Bool &cmd_msg) {
-    resp_msg.data = true;
-    pubResponse.publish(&resp_msg);
-}
-ros::Subscriber<std_msgs::Bool> requestCommand("req", onLatency);
-#endif
-
-// class default I2C address is 0x68
-// specific I2C addresses may be passed as a parameter here
-// AD0 low = 0x68 (default for SparkFun breakout and InvenSense evaluation board)
-// AD0 high = 0x69
 MPU6050 mpu;
-//MPU6050 mpu(0x69); // <-- use for AD0 high
-
-
-// uncomment "OUTPUT_READABLE_QUATERNION" if you want to see the actual
-// quaternion components in a [w, x, y, z] format (not best for parsing
-// on a remote host such as Processing or something though)
-//#define OUTPUT_READABLE_QUATERNION
-
-// uncomment "OUTPUT_READABLE_EULER" if you want to see Euler angles
-// (in degrees) calculated from the quaternions coming from the FIFO.
-// Note that Euler angles suffer from gimbal lock (for more info, see
-// http://en.wikipedia.org/wiki/Gimbal_lock)
-//#define OUTPUT_READABLE_EULER
-
-// uncomment "OUTPUT_READABLE_REALACCEL" if you want to see acceleration
-// components with gravity removed. This acceleration reference frame is
-// not compensated for orientation, so +X is always +X according to the
-// sensor, just without the effects of gravity. If you want acceleration
-// compensated for orientation, us OUTPUT_READABLE_WORLDACCEL instead.
-//#define OUTPUT_READABLE_REALACCEL
-
-// uncomment "OUTPUT_READABLE_WORLDACCEL" if you want to see acceleration
-// components with gravity removed and adjusted for the world frame of
-// reference (yaw is relative to initial orientation, since no magnetometer
-// is present in this case). Could be quite handy in some cases.
-//#define OUTPUT_READABLE_WORLDACCEL
-
-// uncomment "OUTPUT_TEAPOT" if you want output that matches the
-// format used for the InvenSense teapot demo
-//#define OUTPUT_TEAPOT
 
 // When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -209,21 +160,21 @@ void encoder() {
 // ================================================================
 void onSteeringCommand(const std_msgs::UInt16 &cmd_msg) {
     // scale it to use it with the servo (value between 0 and 180)
-    if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0)) 
+    if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0))
     {
         // scale it to use it with the servo (value between 0 and 180)
         servo_pw = map(cmd_msg.data, 0, 180, 950, 2050);
-    
+
         if (last_pw != servo_pw) {
             myservo.writeMicroseconds(servo_pw);
         }
-    
+
         if (!servo_initialized) {
             // attaches the servo on pin 9 to the servo object
             myservo.attach(SERVO_PIN);
             servo_initialized = true;
         }
-    
+
         last_pw = servo_pw;
     }
 }
@@ -319,9 +270,38 @@ void onLedCommand(const std_msgs::String &cmd_msg) {
 }
 #endif
 
-// ================================================================
-// ===                      INITIAL SETUP                       ===
-// ================================================================
+void displayVoltageGoodLed() {
+    pixels.setPixelColor(0, 0, 255, 0);
+    pixels.setPixelColor(10, 0, 255, 0);
+    pixels.setPixelColor(11, 0, 255, 0);
+    pixels.setPixelColor(20, 0, 255, 0);
+    pixels.show();
+}
+
+void displayVoltageWarningLed() {
+    pixels.setPixelColor(0, 255, 255, 0);
+    pixels.setPixelColor(10, 255, 255, 0);
+    pixels.setPixelColor(11, 255, 255, 0);
+    pixels.setPixelColor(20, 255, 255, 0);
+    pixels.show();
+}
+
+void displayVoltageBadLed() {
+    pixels.setPixelColor(0, 255, 0, 0);
+    pixels.setPixelColor(10, 255, 0, 0);
+    pixels.setPixelColor(11, 255, 0, 0);
+    pixels.setPixelColor(20, 255, 0, 0);
+    pixels.show();
+}
+
+void disableLed() {
+    pixels.setPixelColor(0, 0, 0, 0);
+    pixels.setPixelColor(10, 0, 0, 0);
+    pixels.setPixelColor(11, 0, 0, 0);
+    pixels.setPixelColor(20, 0, 0, 0);
+    pixels.show();
+}
+
 void setup() {
     nh.getHardware()->setBaud(500000);
     nh.initNode();
@@ -335,10 +315,6 @@ void setup() {
     nh.subscribe(ledCommand);
     nh.subscribe(steeringCommand);
     nh.subscribe(speedCommand);
-#ifdef TEST_COMMUNICATION_LATENCY
-    nh.subscribe(requestCommand);
-    nh.advertise(pubResponse);
-#endif
 
     // join I2C bus (I2Cdev library doesn't do this automatically)
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
@@ -448,31 +424,6 @@ void loop() {
                 // (this lets us immediately read more without waiting for an interrupt)
                 fifoCount -= packetSize;
 
-#ifdef OUTPUT_READABLE_QUATERNION
-                // display quaternion values in easy matrix form: w x y z
-                    mpu.dmpGetQuaternion(&q, fifoBuffer);
-        //            Serial.print("quat\t");
-                    //Serial.print(q.w);
-                    //Serial.print("\t");
-                    //Serial.print(q.x);
-                    //Serial.print("\t");
-                    //Serial.print(q.y);
-                    //Serial.print("\t");
-                    //Serial.println(q.z);
-#endif
-
-#ifdef OUTPUT_READABLE_EULER
-                // display Euler angles in degrees
-        //            mpu.dmpGetQuaternion(&q, fifoBuffer);
-        //            mpu.dmpGetEuler(euler, &q);
-                    //Serial.print("euler\t");
-                    //Serial.print(euler[0] * 180/M_PI);
-                    //Serial.print("\t");
-                    //Serial.print(euler[1] * 180/M_PI);
-                    //Serial.print("\t");
-                    //Serial.println(euler[2] * 180/M_PI);
-#endif
-
                 // display Euler angles in degrees
                 mpu.dmpGetQuaternion(&q, fifoBuffer);
                 mpu.dmpGetGravity(&gravity, &q);
@@ -520,53 +471,72 @@ void loop() {
 
                 steering_msg.data = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
                 pubSteeringAngle.publish(&steering_msg);
+
+                /***Voltmeter**/
+                int value = analogRead(BATTERY_PIN);
+                int enable_pin_status = LOW;
+                float vout = (value * referenceVolts) / 1024.0;
+                measuredVoltage = vout / (R2/(R1+R2));
+                unsigned long currentMillis = millis();
+
+                //Check voltage, if it is below 13V then the indicator start blinking before turning off
+                if (measuredVoltage > 14.0){
+                    unsigned long enableCounter_now = millis();
+                    unsigned long dt = enableCounter_now - enableCounter;
+
+                    if (dt > 3000){
+                        enable_pin_status = HIGH;
+                        ledState = HIGH;
+                    }
+                    else
+                        enable_pin_status = LOW;
+                }
+                else{
+                    enableCounter = millis();
+                    enable_pin_status = LOW;
+                }
+
+                if (measuredVoltage > 14.5) {
+                    displayVoltageGoodLed();
+                } else if (measuredVoltage <= 14.5 && measuredVoltage >= 13.8)
+                {
+                    if(currentMillis - previousMillis > interval)
+                    {
+                        // save the last time you blinked the LED
+                        previousMillis = currentMillis;
+
+                        // if the LED is off turn it on and vice-versa:
+                        if (ledState == LOW) {
+                            ledState = HIGH;
+                            displayVoltageWarningLed();
+                        }
+                        else {
+                            ledState = LOW;
+                            disableLed();
+                        }
+                    }
+                } else if (measuredVoltage < 13.7) {
+                    // save the last time you blinked the LED
+                    previousMillis = currentMillis;
+
+                    // if the LED is off turn it on and vice-versa:
+                    if (ledState == LOW) {
+                        ledState = HIGH;
+                        displayVoltageBadLed();
+                    }
+                    else {
+                        ledState = LOW;
+                        disableLed();
+                    }
+                }
+
+                digitalWrite(ENABLE_PIN, enable_pin_status);
+                voltage_msg.data = measuredVoltage;
+                pubVoltage.publish(&voltage_msg);
             }
         }
     }
 
-    /***Voltmeter**/
-    
-    int value = analogRead(BATTERY_PIN);
-    int enable_pin_status = LOW;
-    float vout = (value * referenceVolts) / 1024.0;
-    measuredVoltage = vout / (R2/(R1+R2)); 
-    
-    //Check voltage, if it is below 13V then the indicator start blinking before turning off
-    if (measuredVoltage > 14.0){
-      unsigned long enableCounter_now = millis();
-      unsigned long dt = enableCounter_now - enableCounter;
-         
-      if (dt > 3000){
-      enable_pin_status = HIGH;
-      ledState = HIGH;
-      }
-      else
-      enable_pin_status = LOW;
-    }
-    else{ 
-      enableCounter = millis();
-      enable_pin_status = LOW;
-    }
-
-    if ((measuredVoltage <= 14.5))
-    {
-      unsigned long currentMillis = millis();
-      if(currentMillis - previousMillis > interval) 
-      {
-        // save the last time you blinked the LED 
-        previousMillis = currentMillis;   
-  
-        // if the LED is off turn it on and vice-versa:
-        if (ledState == LOW)
-          ledState = HIGH;
-        else
-          ledState = LOW;
-      }   
-    }
-    digitalWrite(ENABLE_PIN, enable_pin_status);
-    digitalWrite(NEWLED_PIN, ledState);
-    voltage_msg.data = measuredVoltage;
-    pubVoltage.publish(&voltage_msg);
-
     nh.spinOnce();
 }
+
