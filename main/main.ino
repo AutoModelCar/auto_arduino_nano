@@ -12,7 +12,7 @@
 #include "Wire.h"
 #endif
 
-
+#include <EEPROM.h>
 #include <Adafruit_NeoPixel.h>
 // Which pin on the Arduino is connected to the NeoPixels?
 #define LED_PIN 6
@@ -38,7 +38,7 @@ unsigned long previousMillis = 0;   // will store last time LED was updated
 const float referenceVolts = 4.7; //Default reference on Teensy is 3.3V
 const float R1 = 3700.0;
 const float R2 = 1490.0;
-unsigned int interval = 300;           // interval at which to blink (milliseconds)
+unsigned int interval = 500;           // interval at which to blink (milliseconds)
 float measuredVoltage;
 unsigned long enableCounter;
 
@@ -241,28 +241,26 @@ void onLedCommand(const std_msgs::String &cmd_msg) {
 
 #if NUMPIXELS == 21
 void onLedCommand(const std_msgs::String &cmd_msg) {
-    if (strcmp_P(cmd_msg.data, PSTR("Lle")) == 0) {
+    pixels.setBrightness(16);
+    if (strcmp_P(cmd_msg.data, PSTR("left")) == 0) {
+        for (uint8_t i = 18; i < 20; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg.data, PSTR("right")) == 0) {
+        for (uint8_t i = 11; i < 13; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg.data, PSTR("brake")) == 0) {
         for (uint8_t i = 0; i < 3; i++)
-            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lri")) == 0) {
-        for (uint8_t i = 7; i < 10; i++)
-            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lstop")) == 0) {
-        for (uint8_t i = 10; i < 13; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
 
-        for (uint8_t i = 18; i < 21; i++)
+        for (uint8_t i = 8; i < 10; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lpa")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0) {
-        for (uint8_t i = 10; i < 21; i++)
-            pixels.setPixelColor(i, pixels.Color(255, 255, 255)); //white
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lre")) == 0) {
-        for (uint8_t i = 10; i < 21; i++)
+    } else if (strcmp_P(cmd_msg.data, PSTR("reverse")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0) {
+        for (uint8_t i = 0; i < 3; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lfr")) == 0) {
-        for (uint8_t i = 0; i < 10; i++)
-            pixels.setPixelColor(i, pixels.Color(255, 255, 255)); //white
-    } else if (strcmp_P(cmd_msg.data, PSTR("LdiL")) == 0) {
+
+        for (uint8_t i = 8; i < 10; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
+    } else if (strcmp_P(cmd_msg.data, PSTR("disable")) == 0) {
         for (uint8_t i = 0; i < 21; i++)
             pixels.setPixelColor(i, pixels.Color(0, 0, 0)); //disable
     }
@@ -271,35 +269,41 @@ void onLedCommand(const std_msgs::String &cmd_msg) {
 #endif
 
 void displayVoltageGoodLed() {
-    pixels.setPixelColor(0, 0, 255, 0);
-    pixels.setPixelColor(10, 0, 255, 0);
-    pixels.setPixelColor(11, 0, 255, 0);
-    pixels.setPixelColor(20, 0, 255, 0);
+    pixels.setBrightness(16);
+    pixels.setPixelColor(5, 0, 255, 0);
+    pixels.setPixelColor(15, 0, 255, 0);
+    pixels.setPixelColor(16, 0, 255, 0);
     pixels.show();
 }
 
 void displayVoltageWarningLed() {
-    pixels.setPixelColor(0, 255, 255, 0);
-    pixels.setPixelColor(10, 255, 255, 0);
-    pixels.setPixelColor(11, 255, 255, 0);
-    pixels.setPixelColor(20, 255, 255, 0);
+    pixels.setBrightness(16);
+    pixels.setPixelColor(5, 255, 255, 0);
+    pixels.setPixelColor(15, 255, 255, 0);
+    pixels.setPixelColor(16, 255, 255, 0);
     pixels.show();
 }
 
 void displayVoltageBadLed() {
-    pixels.setPixelColor(0, 255, 0, 0);
-    pixels.setPixelColor(10, 255, 0, 0);
-    pixels.setPixelColor(11, 255, 0, 0);
-    pixels.setPixelColor(20, 255, 0, 0);
+    pixels.setBrightness(16);
+    pixels.setPixelColor(5, 255, 0, 0);
+    pixels.setPixelColor(15, 255, 0, 0);
+    pixels.setPixelColor(16, 255, 0, 0);
     pixels.show();
 }
 
 void disableLed() {
-    pixels.setPixelColor(0, 0, 0, 0);
-    pixels.setPixelColor(10, 0, 0, 0);
-    pixels.setPixelColor(11, 0, 0, 0);
-    pixels.setPixelColor(20, 0, 0, 0);
+    pixels.setPixelColor(5, 0, 0, 0);
+    pixels.setPixelColor(15, 0, 0, 0);
+    pixels.setPixelColor(16, 0, 0, 0);
     pixels.show();
+}
+
+int readEEPROMInt(int addr) {
+    byte low, high;
+    low=EEPROM.read(addr);
+    high=EEPROM.read(addr+1);
+    return low + ((high << 8)&0xFF00);
 }
 
 void setup() {
@@ -338,12 +342,12 @@ void setup() {
     devStatus = mpu.dmpInitialize();
 
     // supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXAccelOffset(-3180);
-    mpu.setYAccelOffset(-2813);
-    mpu.setZAccelOffset(1103); // 1688 factory default for my test chip
-    mpu.setXGyroOffset(197);
-    mpu.setYGyroOffset(-41);
-    mpu.setZGyroOffset(1);
+    mpu.setXAccelOffset(readEEPROMInt(0));
+    mpu.setYAccelOffset(readEEPROMInt(2));
+    mpu.setZAccelOffset(readEEPROMInt(4)); // 1688 factory default for my test chip
+    mpu.setXGyroOffset(readEEPROMInt(6));
+    mpu.setYGyroOffset(readEEPROMInt(8));
+    mpu.setZGyroOffset(readEEPROMInt(10));
 
     // make sure it worked (returns 0 if so)
     if (devStatus == 0) {
@@ -517,16 +521,17 @@ void loop() {
                     }
                 } else if (measuredVoltage < 13.7) {
                     // save the last time you blinked the LED
-                    previousMillis = currentMillis;
+                    if(currentMillis - previousMillis > interval) {
+                        previousMillis = currentMillis;
 
-                    // if the LED is off turn it on and vice-versa:
-                    if (ledState == LOW) {
-                        ledState = HIGH;
-                        displayVoltageBadLed();
-                    }
-                    else {
-                        ledState = LOW;
-                        disableLed();
+                        // if the LED is off turn it on and vice-versa:
+                        if (ledState == LOW) {
+                            ledState = HIGH;
+                            displayVoltageBadLed();
+                        } else {
+                            ledState = LOW;
+                            disableLed();
+                        }
                     }
                 }
 
