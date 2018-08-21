@@ -38,26 +38,26 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-  If an MPU6050 
-      * is an ideal member of its tribe, 
-      * is properly warmed up, 
-      * is at rest in a neutral position, 
-      * is in a location where the pull of gravity is exactly 1g, and 
-      * has been loaded with the best possible offsets, 
-then it will report 0 for all accelerations and displacements, except for 
-Z acceleration, for which it will report 16384 (that is, 2^14).  Your device 
-probably won't do quite this well, but good offsets will all get the baseline 
+  If an MPU6050
+      * is an ideal member of its tribe,
+      * is properly warmed up,
+      * is at rest in a neutral position,
+      * is in a location where the pull of gravity is exactly 1g, and
+      * has been loaded with the best possible offsets,
+then it will report 0 for all accelerations and displacements, except for
+Z acceleration, for which it will report 16384 (that is, 2^14).  Your device
+probably won't do quite this well, but good offsets will all get the baseline
 outputs close to these target values.
 
-  Put the MPU6050 in a flat and horizontal surface, and leave it operating for 
+  Put the MPU6050 in a flat and horizontal surface, and leave it operating for
 5-10 minutes so its temperature gets stabilized.
 
   Run this program.  A "----- done -----" line will indicate that it has done its best.
-With the current accuracy-related constants (NFast = 1000, NSlow = 10000), it will take 
+With the current accuracy-related constants (NFast = 1000, NSlow = 10000), it will take
 a few minutes to get there.
 
-  Along the way, it will generate a dozen or so lines of output, showing that for each 
-of the 6 desired offsets, it is 
+  Along the way, it will generate a dozen or so lines of output, showing that for each
+of the 6 desired offsets, it is
       * first, trying to find two estimates, one too low and one too high, and
       * then, closing in until the bracket can't be made smaller.
 
@@ -66,7 +66,7 @@ of the 6 desired offsets, it is
 As will have been shown in interspersed header lines, the six groups making up this
 line describe the optimum offsets for the X acceleration, Y acceleration, Z acceleration,
 X gyro, Y gyro, and Z gyro, respectively.  In the sample shown just above, the trial showed
-that +567 was the best offset for the X acceleration, -2223 was best for Y acceleration, 
+that +567 was the best offset for the X acceleration, -2223 was best for Y acceleration,
 and so on.
 
   The need for the delay between readings (usDelay) was brought to my attention by Nikolaus Doppelhammer.
@@ -81,8 +81,15 @@ and so on.
 // Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
 // is used in I2Cdev.h
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-    #include "Wire.h"
+#include "Wire.h"
 #endif
+
+#include <Adafruit_NeoPixel.h>
+#include <EEPROM.h>
+// Which pin on the Arduino is connected to the NeoPixels?
+#define LED_PIN 6
+// How many NeoPixels are attached to the Arduino?
+#define NUMPIXELS 21
 
 // class default I2C address is 0x68
 // specific I2C addresses may be passed as a parameter here
@@ -91,6 +98,12 @@ and so on.
 MPU6050 accelgyro;
 //MPU6050 accelgyro(0x69); // <-- use for AD0 high
 
+
+#define BATTERY_PIN A6
+#define ENABLE_PIN 7
+const float referenceVolts = 4.7;
+const float R1 = 3700.0;
+const float R2 = 1490.0;
 
 const char LBRACKET = '[';
 const char RBRACKET = ']';
@@ -109,52 +122,113 @@ const int usDelay = 3150;   // empirical, to hold sampling to 200 Hz
 const int NFast =  1000;    // the bigger, the better (but slower)
 const int NSlow = 10000;    // ..
 const int LinesBetweenHeaders = 5;
-      int LowValue[6];
-      int HighValue[6];
-      int Smoothed[6];
-      int LowOffset[6];
-      int HighOffset[6];
-      int Target[6];
-      int LinesOut;
-      int N;
-      
+int LowValue[6];
+int HighValue[6];
+int Smoothed[6];
+int LowOffset[6];
+int HighOffset[6];
+int Target[6];
+int LinesOut;
+int N;
+uint16_t ledOffset = 0;
+int16_t ledIncreaseVal = 1;
+
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+
+
+
+void displayVoltageGoodLed() {
+    pixels.setPixelColor(0, 0, 255, 0);
+    pixels.setPixelColor(10, 0, 255, 0);
+    pixels.setPixelColor(11, 0, 255, 0);
+    pixels.setPixelColor(20, 0, 255, 0);
+    pixels.show();
+}
+
+void displayVoltageWarningLed() {
+    pixels.setPixelColor(0, 255, 255, 0);
+    pixels.setPixelColor(10, 255, 255, 0);
+    pixels.setPixelColor(11, 255, 255, 0);
+    pixels.setPixelColor(20, 255, 255, 0);
+    pixels.show();
+}
+
+void displayVoltageBadLed() {
+    pixels.setPixelColor(0, 255, 0, 0);
+    pixels.setPixelColor(10, 255, 0, 0);
+    pixels.setPixelColor(11, 255, 0, 0);
+    pixels.setPixelColor(20, 255, 0, 0);
+    pixels.show();
+}
+
+void displayWorkingLed(uint16_t offset) {
+    pixels.clear();
+    pixels.setBrightness(16);
+    pixels.setPixelColor(0 + offset, 255, 255, 0);
+    pixels.setPixelColor(10 - offset, 255, 255, 0);
+    pixels.setPixelColor(11 + offset, 255, 255, 0);
+    pixels.setPixelColor(20 - offset, 255, 255, 0);
+    pixels.show();
+}
+
+void displayInitializeLed() {
+    pixels.clear();
+    pixels.setBrightness(16);
+    for (uint8_t i = 0; i < NUMPIXELS; i++) {
+        pixels.setPixelColor(i, 255, 0, 0);
+    }
+    pixels.show();
+}
+
+void displaySuccessLed() {
+    pixels.clear();
+    pixels.setBrightness(16);
+    for (uint8_t i = 0; i < NUMPIXELS; i++) {
+        pixels.setPixelColor(i, 255, 255, 0);
+    }
+    pixels.show();
+}
+
 void ForceHeader()
-  { LinesOut = 99; }
-    
+{ LinesOut = 99; }
+
 void GetSmoothed()
-  { int RawValue[6];
+{ int RawValue[6];
     int i;
     long Sums[6];
     for (i = iAx; i <= iGz; i++)
-      { Sums[i] = 0; }
+    { Sums[i] = 0; }
 //    unsigned long Start = micros();
 
     for (i = 1; i <= N; i++)
-      { // get sums
-        accelgyro.getMotion6(&RawValue[iAx], &RawValue[iAy], &RawValue[iAz], 
+    { // get sums
+        accelgyro.getMotion6(&RawValue[iAx], &RawValue[iAy], &RawValue[iAz],
                              &RawValue[iGx], &RawValue[iGy], &RawValue[iGz]);
         if ((i % 500) == 0)
-          Serial.print(PERIOD);
+            Serial.print(PERIOD);
         delayMicroseconds(usDelay);
         for (int j = iAx; j <= iGz; j++)
-          Sums[j] = Sums[j] + RawValue[j];
-      } // get sums
+            Sums[j] = Sums[j] + RawValue[j];
+    } // get sums
 //    unsigned long usForN = micros() - Start;
 //    Serial.print(" reading at ");
 //    Serial.print(1000000/((usForN+N/2)/N));
 //    Serial.println(" Hz");
     for (i = iAx; i <= iGz; i++)
-      { Smoothed[i] = (Sums[i] + N/2) / N ; }
-  } // GetSmoothed
+    { Smoothed[i] = (Sums[i] + N/2) / N ; }
+} // GetSmoothed
 
 void Initialize()
-  {
+{
     // join I2C bus (I2Cdev library doesn't do this automatically)
-    #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-        Wire.begin();
-    #elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
-        Fastwire::setup(400, true);
-    #endif
+#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+    Wire.begin();
+#elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
+    Fastwire::setup(400, true);
+#endif
+
+    pixels.begin();
 
     Serial.begin(9600);
 
@@ -165,154 +239,233 @@ void Initialize()
     // verify connection
     Serial.println("Testing device connections...");
     Serial.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
-  } // Initialize
+} // Initialize
 
 void SetOffsets(int TheOffsets[6])
-  { accelgyro.setXAccelOffset(TheOffsets [iAx]);
+{ accelgyro.setXAccelOffset(TheOffsets [iAx]);
     accelgyro.setYAccelOffset(TheOffsets [iAy]);
     accelgyro.setZAccelOffset(TheOffsets [iAz]);
     accelgyro.setXGyroOffset (TheOffsets [iGx]);
     accelgyro.setYGyroOffset (TheOffsets [iGy]);
     accelgyro.setZGyroOffset (TheOffsets [iGz]);
-  } // SetOffsets
+} // SetOffsets
 
 void ShowProgress()
-  { if (LinesOut >= LinesBetweenHeaders)
-      { // show header
+{ if (LinesOut >= LinesBetweenHeaders)
+    { // show header
         Serial.println("\tXAccel\t\t\tYAccel\t\t\t\tZAccel\t\t\tXGyro\t\t\tYGyro\t\t\tZGyro");
         LinesOut = 0;
-      } // show header
+    } // show header
     Serial.print(BLANK);
     for (int i = iAx; i <= iGz; i++)
-      { Serial.print(LBRACKET);
+    { Serial.print(LBRACKET);
         Serial.print(LowOffset[i]),
-        Serial.print(COMMA);
+            Serial.print(COMMA);
         Serial.print(HighOffset[i]);
         Serial.print("] --> [");
         Serial.print(LowValue[i]);
         Serial.print(COMMA);
         Serial.print(HighValue[i]);
         if (i == iGz)
-          { Serial.println(RBRACKET); }
+        { Serial.println(RBRACKET); }
         else
-          { Serial.print("]\t"); }
-      }
+        { Serial.print("]\t"); }
+    }
     LinesOut++;
-  } // ShowProgress
+
+    displayWorkingLed(ledOffset);
+
+    if (ledOffset >= 5) {
+        ledIncreaseVal = -1;
+    }
+
+    if (ledOffset <= 0) {
+        ledIncreaseVal = 1;
+    }
+
+    ledOffset += ledIncreaseVal;
+} // ShowProgress
+
+void WriteEEPROMInt(int addr, int val) {
+    byte low, high;
+    low=val&0xFF;
+    high=(val>>8)&0xFF;
+    EEPROM.write(addr, low);
+    EEPROM.write(addr+1, high);
+    return;
+}
+
+void WriteEEPROM() {
+    int addr = 0;
+    // XAccel
+    WriteEEPROMInt(addr, LowOffset[0]);
+    addr += 2;
+    // YAccel
+    WriteEEPROMInt(addr, LowOffset[1]);
+    addr += 2;
+    // ZAccel
+    WriteEEPROMInt(addr, LowOffset[2]);
+    addr += 2;
+    // XGyro
+    WriteEEPROMInt(addr, LowOffset[3]);
+    addr += 2;
+    // YGyro
+    WriteEEPROMInt(addr, LowOffset[4]);
+    addr += 2;
+    // ZGyro
+    WriteEEPROMInt(addr, LowOffset[5]);
+}
 
 void PullBracketsIn()
-  { boolean AllBracketsNarrow;
+{ boolean AllBracketsNarrow;
     boolean StillWorking;
     int NewOffset[6];
-  
+
     Serial.println("\nclosing in:");
     AllBracketsNarrow = false;
     ForceHeader();
     StillWorking = true;
-    while (StillWorking) 
-      { StillWorking = false;
+    while (StillWorking)
+    { StillWorking = false;
         if (AllBracketsNarrow && (N == NFast))
-          { SetAveraging(NSlow); }
+        { SetAveraging(NSlow); }
         else
-          { AllBracketsNarrow = true; }// tentative
+        { AllBracketsNarrow = true; }// tentative
         for (int i = iAx; i <= iGz; i++)
-          { if (HighOffset[i] <= (LowOffset[i]+1))
-              { NewOffset[i] = LowOffset[i]; }
+        { if (HighOffset[i] <= (LowOffset[i]+1))
+            { NewOffset[i] = LowOffset[i]; }
             else
-              { // binary search
+            { // binary search
                 StillWorking = true;
                 NewOffset[i] = (LowOffset[i] + HighOffset[i]) / 2;
                 if (HighOffset[i] > (LowOffset[i] + 10))
-                  { AllBracketsNarrow = false; }
-              } // binary search
-          }
+                { AllBracketsNarrow = false; }
+            } // binary search
+        }
         SetOffsets(NewOffset);
         GetSmoothed();
         for (int i = iAx; i <= iGz; i++)
-          { // closing in
+        { // closing in
             if (Smoothed[i] > Target[i])
-              { // use lower half
+            { // use lower half
                 HighOffset[i] = NewOffset[i];
                 HighValue[i] = Smoothed[i];
-              } // use lower half
+            } // use lower half
             else
-              { // use upper half
+            { // use upper half
                 LowOffset[i] = NewOffset[i];
                 LowValue[i] = Smoothed[i];
-              } // use upper half
-          } // closing in
+            } // use upper half
+        } // closing in
         ShowProgress();
-      } // still working
-   
-  } // PullBracketsIn
+    } // still working
+
+} // PullBracketsIn
 
 void PullBracketsOut()
-  { boolean Done = false;
+{ boolean Done = false;
     int NextLowOffset[6];
     int NextHighOffset[6];
 
     Serial.println("expanding:");
     ForceHeader();
- 
+
     while (!Done)
-      { Done = true;
+    { Done = true;
         SetOffsets(LowOffset);
         GetSmoothed();
         for (int i = iAx; i <= iGz; i++)
-          { // got low values
+        { // got low values
             LowValue[i] = Smoothed[i];
             if (LowValue[i] >= Target[i])
-              { Done = false;
+            { Done = false;
                 NextLowOffset[i] = LowOffset[i] - 1000;
-              }
+            }
             else
-              { NextLowOffset[i] = LowOffset[i]; }
-          } // got low values
-      
+            { NextLowOffset[i] = LowOffset[i]; }
+        } // got low values
+
         SetOffsets(HighOffset);
         GetSmoothed();
         for (int i = iAx; i <= iGz; i++)
-          { // got high values
+        { // got high values
             HighValue[i] = Smoothed[i];
             if (HighValue[i] <= Target[i])
-              { Done = false;
+            { Done = false;
                 NextHighOffset[i] = HighOffset[i] + 1000;
-              }
+            }
             else
-              { NextHighOffset[i] = HighOffset[i]; }
-          } // got high values
+            { NextHighOffset[i] = HighOffset[i]; }
+        } // got high values
         ShowProgress();
         for (int i = iAx; i <= iGz; i++)
-          { LowOffset[i] = NextLowOffset[i];   // had to wait until ShowProgress done
+        { LowOffset[i] = NextLowOffset[i];   // had to wait until ShowProgress done
             HighOffset[i] = NextHighOffset[i]; // ..
-          }
-     } // keep going
-  } // PullBracketsOut
+        }
+    } // keep going
+} // PullBracketsOut
 
 void SetAveraging(int NewN)
-  { N = NewN;
+{ N = NewN;
     Serial.print("averaging ");
     Serial.print(N);
     Serial.println(" readings each time");
-   } // SetAveraging
+} // SetAveraging
+
+void TurnOnCar() {
+    /***Voltmeter**/
+    int value = analogRead(BATTERY_PIN);
+    int enable_pin_status = LOW;
+    float vout = (value * referenceVolts) / 1024.0;
+    float measuredVoltage = vout / (R2/(R1+R2));
+
+    //Check voltage, if it is below 13V then the indicator start blinking before turning off
+    if (measuredVoltage > 14.0){
+        enable_pin_status = HIGH;
+    }
+    else{
+        enable_pin_status = LOW;
+    }
+
+    if (measuredVoltage > 14.5) {
+        displayVoltageGoodLed();
+    } else if (measuredVoltage <= 14.5 && measuredVoltage >= 13.8)
+    {
+        displayVoltageWarningLed();
+    } else if (measuredVoltage < 13.7) {
+        displayVoltageBadLed();
+    }
+
+    digitalWrite(ENABLE_PIN, enable_pin_status);
+}
+
+void TurnOffCar() {
+    delay(5000);
+    digitalWrite(ENABLE_PIN, LOW);
+}
 
 void setup()
-  { Initialize();
+{
+    TurnOnCar();
+    Initialize();
+    displayInitializeLed();
     for (int i = iAx; i <= iGz; i++)
-      { // set targets and initial guesses
-        Target[i] = 0; // must fix for ZAccel 
+    { // set targets and initial guesses
+        Target[i] = 0; // must fix for ZAccel
         HighOffset[i] = 0;
         LowOffset[i] = 0;
-      } // set targets and initial guesses
+    } // set targets and initial guesses
     Target[iAz] = 16384;
     SetAveraging(NFast);
-    
+
     PullBracketsOut();
     PullBracketsIn();
-    
+    displaySuccessLed();
+
     Serial.println("-------------- done --------------");
-  } // setup
- 
+    TurnOffCar();
+} // setup
+
 void loop()
-  {
-  } // loop
+{
+} // loop
