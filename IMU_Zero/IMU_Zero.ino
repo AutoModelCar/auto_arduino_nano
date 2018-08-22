@@ -460,6 +460,7 @@ void setup()
 
     PullBracketsOut();
     PullBracketsIn();
+    WriteEEPROM();
     displaySuccessLed();
 
     Serial.println("-------------- done --------------");
@@ -469,3 +470,4 @@ void setup()
 void loop()
 {
 } // loop
+
