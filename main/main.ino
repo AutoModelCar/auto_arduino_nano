@@ -14,19 +14,18 @@
 
 #include <EEPROM.h>
 #include <Adafruit_NeoPixel.h>
-// Which pin on the Arduino is connected to the NeoPixels?
+#include <Servo.h>
+#include <PacketSerial.h>
+
 #define LED_PIN 6
-// How many NeoPixels are attached to the Arduino?
 #define NUMPIXELS 21
 
-#include <Servo.h>
 #define MAX_DELTATIME 20000
 #define DIR_PIN 4
 #define SERVO_PIN 10
 
 #define ENCODER_PIN 3
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
-//#define TEST_COMMUNICATION_LATENCY
 #define SERVO_FEEDBACK_MOTOR_PIN 0
 
 //Voltmeter
@@ -42,49 +41,9 @@ unsigned int interval = 500;           // interval at which to blink (millisecon
 float measuredVoltage;
 unsigned long enableCounter;
 
-#include <ros.h>
-#include <std_msgs/Bool.h>
-#include <std_msgs/Int8.h>
-#include <std_msgs/Int16.h>
-#include <std_msgs/UInt8.h>
-#include <std_msgs/UInt16.h>
-#include <std_msgs/Float32.h>
-#include <std_msgs/String.h>
-#include <geometry_msgs/Twist.h>
-
-const char LED_TOPIC[]  PROGMEM  = { "led" };
-const char STEERING_TOPIC[]  PROGMEM  = { "steering" };
-const char SPEED_TOPIC[]  PROGMEM  = { "speed" };
-const char YAW_TOPIC[]  PROGMEM  = { "yaw" };
-const char ROLL_TOPIC[]  PROGMEM  = { "roll" };
-const char PITCH_TOPIC[]  PROGMEM  = { "pitch" };
-const char TWIST_TOPIC[]  PROGMEM  = { "twist" };
-const char STEERING_ANGLE_TOPIC[]  PROGMEM  = { "steering_angle" };
-const char VOLTAGE_TOPIC[]  PROGMEM  = { "voltage" };
-
-ros::NodeHandle nh;
-
-std_msgs::Float32 yaw_msg;
-std_msgs::Float32 pitch_msg;
-std_msgs::Float32 roll_msg;
-std_msgs::UInt16 steering_msg;
-geometry_msgs::Twist twist_msg;
-std_msgs::Float32 voltage_msg;
-
-ros::Publisher pub_yaw(FCAST(YAW_TOPIC), &yaw_msg);
-ros::Publisher pubTwist(FCAST(TWIST_TOPIC), &twist_msg);
-ros::Publisher pubRoll(FCAST(ROLL_TOPIC), &roll_msg);
-ros::Publisher pubPitch(FCAST(PITCH_TOPIC), &pitch_msg);
-ros::Publisher pubSteeringAngle(FCAST(STEERING_ANGLE_TOPIC), &steering_msg);
-ros::Publisher pubVoltage(FCAST(VOLTAGE_TOPIC), &voltage_msg);
-
-void onLedCommand(const std_msgs::String &cmd_msg);
-void onSteeringCommand(const std_msgs::UInt16 &cmd_msg);
-void onSpeedCommand(const std_msgs::Int16 &cmd_msg);
-
-ros::Subscriber<std_msgs::String> ledCommand(FCAST(LED_TOPIC), onLedCommand);
-ros::Subscriber<std_msgs::UInt16> steeringCommand(FCAST(STEERING_TOPIC), onSteeringCommand);
-ros::Subscriber<std_msgs::Int16> speedCommand(FCAST(SPEED_TOPIC), onSpeedCommand);
+void onLedCommand(const char* cmd_msg);
+void onSteeringCommand(const uint8_t cmd_msg);
+void onSpeedCommand(const int16_t cmd_msg);
 
 MPU6050 mpu;
 
@@ -99,6 +58,7 @@ volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
 volatile unsigned long deltatime = 0;
 volatile boolean first_rising = true;
+volatile uint8_t ticks = 0;
 
 int8_t direction_motor = 1;
 
@@ -115,12 +75,28 @@ Quaternion q;           // [w, x, y, z]         quaternion container
 VectorFloat gravity;    // [x, y, z]            gravity vector
 //float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
-
+PacketSerial packetSerial;
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
 // ================================================================
 volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
+
+enum class MessageType :uint8_t {
+    DEBUG,
+    INFO,
+    WARN,
+    ERROR,
+    SPEED_CMD,
+    STEERING_CMD,
+    LED_CMD,
+    STEERING_ANGLE,
+    TICKS,
+    SPEED,
+    IMU,
+    VOLTAGE
+};
+
 void dmpDataReady() {
     mpuInterrupt = true;
 }
@@ -151,6 +127,7 @@ void encoder() {
     TCNT2 = 0;
     first_rising = false;
     encoder_counter++;
+    ticks++;
     sei();
 }
 
@@ -158,12 +135,12 @@ void encoder() {
 // ================================================================
 // ===               SUBSCRIBERS                                ===
 // ================================================================
-void onSteeringCommand(const std_msgs::UInt16 &cmd_msg) {
+void onSteeringCommand(const uint8_t cmd_msg) {
     // scale it to use it with the servo (value between 0 and 180)
-    if ((cmd_msg.data <= 180) && (cmd_msg.data >= 0))
+    if ((cmd_msg <= 180) && (cmd_msg >= 0))
     {
         // scale it to use it with the servo (value between 0 and 180)
-        servo_pw = map(cmd_msg.data, 0, 180, 950, 2050);
+        servo_pw = map(cmd_msg, 0, 180, 950, 2050);
 
         if (last_pw != servo_pw) {
             myservo.writeMicroseconds(servo_pw);
@@ -174,13 +151,58 @@ void onSteeringCommand(const std_msgs::UInt16 &cmd_msg) {
             myservo.attach(SERVO_PIN);
             servo_initialized = true;
         }
-
-        last_pw = servo_pw;
     }
 }
 
-void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
-    int16_t motor_val = cmd_msg.data / 4;
+
+void displayBackwardLed() {
+    pixels.setBrightness(16);
+    pixels.setPixelColor(2, 255, 255, 255);
+    pixels.setPixelColor(3, 255, 255, 255);
+    pixels.setPixelColor(7, 255, 255, 255);
+    pixels.setPixelColor(8, 255, 255, 255);
+
+    pixels.setPixelColor(13, 0, 0, 0);
+    pixels.setPixelColor(14, 0, 0, 0);
+    pixels.setPixelColor(17, 0, 0, 0);
+    pixels.setPixelColor(18, 0, 0, 0);
+
+    pixels.show();
+}
+
+void displayForwardLed() {
+    pixels.setBrightness(16);
+
+    pixels.setPixelColor(2, 0, 0, 0);
+    pixels.setPixelColor(3, 0, 0, 0);
+    pixels.setPixelColor(7, 0, 0, 0);
+    pixels.setPixelColor(8, 0, 0, 0);
+
+    pixels.setPixelColor(13, 255, 255, 255);
+    pixels.setPixelColor(14, 255, 255, 255);
+    pixels.setPixelColor(17, 255, 255, 255);
+    pixels.setPixelColor(18, 255, 255, 255);
+    pixels.show();
+}
+
+void disableDirectionLed() {
+    pixels.setBrightness(16);
+
+    pixels.setPixelColor(2, 0, 0, 0);
+    pixels.setPixelColor(3, 0, 0, 0);
+    pixels.setPixelColor(7, 0, 0, 0);
+    pixels.setPixelColor(8, 0, 0, 0);
+
+    pixels.setPixelColor(13, 0, 0, 0);
+    pixels.setPixelColor(14, 0, 0, 0);
+    pixels.setPixelColor(17, 0, 0, 0);
+    pixels.setPixelColor(18, 0, 0, 0);
+
+    pixels.show();
+}
+
+void onSpeedCommand(const int16_t cmd_msg) {
+    int16_t motor_val = cmd_msg / 4;
 
     if (abs(motor_val) > 255) {
         return;
@@ -194,79 +216,51 @@ void onSpeedCommand(const std_msgs::Int16 &cmd_msg) {
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, HIGH);
         direction_motor = -1;
+        displayBackwardLed();
     } else if (motor_val > 0) {
         digitalWrite(DIR_PIN, LOW);
         direction_motor = 1;
+        displayForwardLed();
     }
 
     if (servo_val < 15) {
         servo_val = 15;
+        disableDirectionLed();
     }
 
     OCR2A = servo_val;
 }
 
-#if NUMPIXELS == 8
-/* Control lights */
-/*L20C32+16+8+4+2+1, 32+16/16=2+1 -> R , 8+4/4=2+1 -> G, 2+1 -> B : WHITE=63, RED=48, YELLOW=56,OR 60*/
-void onLedCommand(const std_msgs::String &cmd_msg) {
-    if (strcmp_P(cmd_msg.data, PSTR("Lle")) == 0) {
-        pixels.setPixelColor(0, pixels.Color(255, 80, 0)); //yellow
-        pixels.setPixelColor(7, pixels.Color(255, 80, 0)); //yellow
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lri")) == 0) {
-        pixels.setPixelColor(3, pixels.Color(255, 80, 0)); //yellow
-        pixels.setPixelColor(4, pixels.Color(255, 80, 0)); //yellow
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lstop")) == 0) {
-        for (uint8_t i = 4; i < 8; i++)
-            pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lpa")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0) {
-        for (uint8_t i = 0; i < 4; i++)
-            pixels.setPixelColor(i, pixels.Color(50, 50, 50)); //white (darker)
-
-        for (uint8_t i = 4; i < 8; i++)
-            pixels.setPixelColor(i, pixels.Color(50, 0, 0)); //red (darker)
-
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lre")) == 0) {
-        pixels.setPixelColor(5, pixels.Color(50, 50, 50)); //white (darker)
-    } else if (strcmp_P(cmd_msg.data, PSTR("Lfr")) == 0) {
-        for (uint8_t i = 0; i < 4; i++)
-            pixels.setPixelColor(i, pixels.Color(255, 255, 255)); //white
-    } else if (strcmp_P(cmd_msg.data, PSTR("LdiL")) == 0) {
-        for (uint8_t i = 0; i < 8; i++)
-            pixels.setPixelColor(i, pixels.Color(0, 0, 0)); //disable
-    }
-    pixels.show(); // This sends the updated pixel color to the hardware.
-}
-#endif
-
-#if NUMPIXELS == 21
-void onLedCommand(const std_msgs::String &cmd_msg) {
+void onLedCommand(const char* cmd_msg) {
     pixels.setBrightness(16);
-    if (strcmp_P(cmd_msg.data, PSTR("left")) == 0) {
+    if (strcmp_P(cmd_msg, PSTR("left")) == 0) {
         for (uint8_t i = 18; i < 20; i++)
             pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
-    } else if (strcmp_P(cmd_msg.data, PSTR("right")) == 0) {
+        for (uint8_t i = 0; i < 2; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg, PSTR("right")) == 0) {
         for (uint8_t i = 11; i < 13; i++)
             pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
-    } else if (strcmp_P(cmd_msg.data, PSTR("brake")) == 0) {
+        for (uint8_t i = 9; i < 11; i++)
+            pixels.setPixelColor(i, pixels.Color(255, 80, 0)); //yellow
+    } else if (strcmp_P(cmd_msg, PSTR("brake")) == 0) {
         for (uint8_t i = 0; i < 3; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
 
         for (uint8_t i = 8; i < 10; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
-    } else if (strcmp_P(cmd_msg.data, PSTR("reverse")) == 0 || strcmp_P(cmd_msg.data, PSTR("Lta")) == 0) {
+    } else if (strcmp_P(cmd_msg, PSTR("reverse")) == 0 || strcmp_P(cmd_msg, PSTR("Lta")) == 0) {
         for (uint8_t i = 0; i < 3; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
 
         for (uint8_t i = 8; i < 10; i++)
             pixels.setPixelColor(i, pixels.Color(255, 0, 0)); //red
-    } else if (strcmp_P(cmd_msg.data, PSTR("disable")) == 0) {
+    } else if (strcmp_P(cmd_msg, PSTR("disable")) == 0) {
         for (uint8_t i = 0; i < 21; i++)
             pixels.setPixelColor(i, pixels.Color(0, 0, 0)); //disable
     }
     pixels.show(); // This sends the updated pixel color to the hardware.
 }
-#endif
 
 void displayVoltageGoodLed() {
     pixels.setBrightness(16);
@@ -299,6 +293,7 @@ void disableLed() {
     pixels.show();
 }
 
+
 int readEEPROMInt(int addr) {
     byte low, high;
     low=EEPROM.read(addr);
@@ -306,19 +301,133 @@ int readEEPROMInt(int addr) {
     return low + ((high << 8)&0xFF00);
 }
 
-void setup() {
-    nh.getHardware()->setBaud(500000);
-    nh.initNode();
-    nh.advertise(pubTwist);
-    nh.advertise(pub_yaw);
-    nh.advertise(pubRoll);
-    nh.advertise(pubPitch);
-    nh.advertise(pubSteeringAngle);
-    nh.advertise(pubVoltage);
+void onPacketReceived(const uint8_t* message, size_t size)
+{
+    auto type = static_cast<MessageType>(message[0]);
 
-    nh.subscribe(ledCommand);
-    nh.subscribe(steeringCommand);
-    nh.subscribe(speedCommand);
+    switch(type) {
+
+        case MessageType::DEBUG:break;
+        case MessageType::INFO:break;
+        case MessageType::WARN:break;
+        case MessageType::ERROR:break;
+        case MessageType::STEERING_ANGLE:break;
+        case MessageType::TICKS:break;
+        case MessageType::SPEED:break;
+        case MessageType::IMU:break;
+        case MessageType::VOLTAGE:break;
+
+        case MessageType::SPEED_CMD:
+            int16_t speed;
+            memcpy(&speed, &message[1], sizeof(int16_t));
+            onSpeedCommand(speed);
+            break;
+        case MessageType::STEERING_CMD:
+            uint8_t steering;
+            memcpy(&steering, &message[1], sizeof(uint8_t));
+            onSteeringCommand(steering);
+            break;
+        case MessageType::LED_CMD:
+            char cmd[size];
+            memcpy(cmd, &message[1], size);
+            onLedCommand(cmd);
+
+            break;
+    }
+}
+
+void logerror(__FlashStringHelper *str) {
+    log(MessageType::ERROR, str);
+}
+
+void logerror(char *str) {
+    log(MessageType::ERROR, str);
+}
+
+void loginfo(__FlashStringHelper *str) {
+    log(MessageType::INFO, str);
+}
+
+void loginfo(char *str) {
+    log(MessageType::INFO, str);
+}
+
+void logdebug(__FlashStringHelper *str) {
+    log(MessageType::DEBUG, str);
+}
+
+void logdebug(char *str) {
+    log(MessageType::DEBUG, str);
+}
+
+void logwarn(__FlashStringHelper *str) {
+    log(MessageType::WARN, str);
+}
+
+void logwarn(char *str) {
+    log(MessageType::WARN, str);
+}
+
+void log(MessageType type, __FlashStringHelper *str) {
+    uint8_t size = sizeof(type) + strlen_P((PGM_P)str) + 1;
+    uint8_t buf[size];
+    buf[0] = (uint8_t)type;
+    strcpy_P(&buf[1], (PGM_P)str);
+    packetSerial.send(buf, size);
+}
+
+void log(MessageType type, char *str) {
+    uint8_t size = sizeof(type) + strlen(str) + 1;
+    uint8_t buf[size];
+    buf[0] = (uint8_t)type;
+    strcpy(&buf[1], str);
+    packetSerial.send(buf, size);
+}
+
+void sendIMU(Quaternion &quaternion) {
+    uint8_t size = sizeof(MessageType) + sizeof(quaternion);
+    uint8_t buf[size];
+    buf[0] = (uint8_t)MessageType::IMU;
+    memcpy(&buf[1], &quaternion, sizeof(quaternion));
+    packetSerial.send(buf, size);
+}
+
+void sendVoltage(float voltage) {
+    uint8_t size = sizeof(MessageType) + sizeof(voltage);
+    uint8_t buf[size];
+    buf[0] = (uint8_t)MessageType::VOLTAGE;
+    memcpy(&buf[1], &voltage, sizeof(voltage));
+    packetSerial.send(buf, size);
+}
+
+void sendSpeed(float speed) {
+    uint8_t size = sizeof(MessageType) + sizeof(speed);
+    uint8_t buf[size];
+    buf[0] = (uint8_t)MessageType::SPEED;
+    memcpy(&buf[1], &speed, sizeof(speed));
+    packetSerial.send(buf, size);
+}
+
+void sendTicks(uint8_t ticks) {
+    uint8_t size = sizeof(MessageType) + sizeof(ticks);
+    uint8_t buf[size];
+    buf[0] = (uint8_t)MessageType::TICKS;
+    memcpy(&buf[1], &ticks, sizeof(ticks));
+    packetSerial.send(buf, size);
+}
+
+void sendSteeringAngle(uint16_t steeringAngle) {
+    uint8_t size = sizeof(MessageType) + sizeof(steeringAngle);
+    uint8_t buf[size];
+    buf[0] = (uint8_t)MessageType::STEERING_ANGLE;
+    memcpy(&buf[1], &steeringAngle, sizeof(steeringAngle));
+    packetSerial.send(buf, size);
+}
+
+void setup() {
+    packetSerial.begin(115200);
+    packetSerial.setStream(&Serial);
+    packetSerial.setPacketHandler(&onPacketReceived);
 
     // join I2C bus (I2Cdev library doesn't do this automatically)
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
@@ -329,25 +438,56 @@ void setup() {
 #endif
 
     // initialize device
-    nh.logerror(F("Initializing I2C devices..."));
+    logerror(F("Initializing I2C devices..."));
     mpu.initialize();
     pinMode(INTERRUPT_PIN, INPUT);
 
     // verify connection
-    nh.loginfo(F("Testing device connections..."));
-    nh.loginfo(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+    loginfo(F("Testing device connections..."));
+    loginfo(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
 
     // load and configure the DMP
-    //Serial.println(F("Initializing DMP..."));
+    loginfo(F("Initializing DMP..."));
     devStatus = mpu.dmpInitialize();
+    loginfo(F("Initialized DMP..."));
 
+    loginfo(F("Reading calibration..."));
     // supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXAccelOffset(readEEPROMInt(0));
-    mpu.setYAccelOffset(readEEPROMInt(2));
-    mpu.setZAccelOffset(readEEPROMInt(4)); // 1688 factory default for my test chip
-    mpu.setXGyroOffset(readEEPROMInt(6));
-    mpu.setYGyroOffset(readEEPROMInt(8));
-    mpu.setZGyroOffset(readEEPROMInt(10));
+    int xAccel = readEEPROMInt(0);
+    int yAccel = readEEPROMInt(2);
+    int zAccel = readEEPROMInt(4);
+    int xGyro = readEEPROMInt(6);
+    int yGyro = readEEPROMInt(8);
+    int zGyro = readEEPROMInt(10);
+
+    loginfo(F("Applying calibration"));
+    mpu.setXAccelOffset(xAccel);
+    mpu.setYAccelOffset(yAccel);
+    mpu.setZAccelOffset(zAccel);
+    mpu.setXGyroOffset(xGyro);
+    mpu.setYGyroOffset(yGyro);
+    mpu.setZGyroOffset(zGyro);
+
+    char msg[32];
+    loginfo(F("IMU Calibration"));
+    logerror(F("XAccel: "));
+    itoa(xAccel, msg, 10);
+    logerror(msg);
+    logerror(F("YAccel: "));
+    itoa(yAccel, msg, 10);
+    logerror(msg);
+    logerror(F("ZAccel: "));
+    itoa(zAccel, msg, 10);
+    logerror(msg);
+    logerror(F("XGyro: "));
+    itoa(xGyro, msg, 10);
+    logerror(msg);
+    logerror(F("YGyro: "));
+    itoa(yGyro, msg, 10);
+    logerror(msg);
+    logerror(F("ZGyro: "));
+    itoa(zGyro, msg, 10);
+    logerror(msg);
 
     // make sure it worked (returns 0 if so)
     if (devStatus == 0) {
@@ -356,12 +496,12 @@ void setup() {
         mpu.setDMPEnabled(true);
 
         // enable Arduino interrupt detection
-        nh.loginfo(F("Enabling interrupt detection (Arduino external interrupt 0)..."));
+        loginfo(F("Enabling interrupt detection (Arduino external interrupt 0)..."));
         attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), dmpDataReady, RISING);
         mpuIntStatus = mpu.getIntStatus();
 
         // set our DMP Ready flag so the main loop() function knows it's okay to use it
-        nh.loginfo(F("DMP ready! Waiting for first interrupt..."));
+        loginfo(F("DMP ready! Waiting for first interrupt..."));
         dmpReady = true;
 
         // get expected DMP packet size for later comparison
@@ -371,9 +511,9 @@ void setup() {
         // 1 = initial memory load failed
         // 2 = DMP configuration updates failed
         // (if it's going to break, usually the code will be 1)
-        nh.logerror(F("DMP Initialization failed (code"));
-        nh.logerror("" + devStatus);
-        nh.logerror(F(")"));
+        logerror(F("DMP Initialization failed (code"));
+        logerror("" + devStatus);
+        logerror(F(")"));
     }
 
     pinMode(ENCODER_PIN, INPUT);
@@ -413,7 +553,7 @@ void loop() {
         if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
             // reset so we can continue cleanly
             mpu.resetFIFO();
-            nh.logerror(F("FIFO overflow!"));
+            logerror(F("FIFO overflow!"));
 
             // otherwise, check for DMP data ready interrupt (this should happen frequently)
         } else if (mpuIntStatus & 0x02) {
@@ -433,26 +573,17 @@ void loop() {
                 mpu.dmpGetGravity(&gravity, &q);
                 mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
-                yaw_msg.data = ypr[0];
-                pub_yaw.publish(&yaw_msg);
+                sendIMU(q);
 
-                pitch_msg.data = ypr[1];
-                pubPitch.publish(&pitch_msg);
-
-                roll_msg.data = ypr[2];
-                pubRoll.publish(&roll_msg);
-
+                float speed = 0.0;
                 // if the motor has stopped we publish the speed when IMU data is rdy because this runs at 100hz
                 if (last_encoder_counter == encoder_counter) {
                     // we did receive nothing so check if the motor has stopped
                     if (T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10 > MAX_DELTATIME) {
-                        twist_msg.linear.x = 0.0;
-                        twist_msg.linear.y = 0.0;
-                        twist_msg.linear.z = 0.0;
-
                         first_rising = true;
 
-                        pubTwist.publish(&twist_msg);
+                        speed = 0.0;
+                        sendSpeed(speed);
 
                         deltatime = 0;
                     }
@@ -461,20 +592,19 @@ void loop() {
                 else {
                     if (deltatime != 0) {
                         //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
-                        twist_msg.linear.x = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
+                        speed = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
                     } else {
-                        twist_msg.linear.x = 0.0;
+                        speed = 0.0;
                     }
 
-                    twist_msg.linear.x = twist_msg.linear.x * direction_motor;
-                    twist_msg.linear.y = 0.0;
-                    twist_msg.linear.z = 0.0;
-                    pubTwist.publish(&twist_msg);
+                    speed *= direction_motor;
+                    sendSpeed(speed);
                 }
                 last_encoder_counter = encoder_counter;
 
-                steering_msg.data = analogRead(SERVO_FEEDBACK_MOTOR_PIN);
-                pubSteeringAngle.publish(&steering_msg);
+                sendTicks(ticks);
+                ticks = 0;
+                sendSteeringAngle(analogRead(SERVO_FEEDBACK_MOTOR_PIN));
 
                 /***Voltmeter**/
                 int value = analogRead(BATTERY_PIN);
@@ -536,12 +666,11 @@ void loop() {
                 }
 
                 digitalWrite(ENABLE_PIN, enable_pin_status);
-                voltage_msg.data = measuredVoltage;
-                pubVoltage.publish(&voltage_msg);
+                sendVoltage(measuredVoltage);
             }
         }
     }
-
-    nh.spinOnce();
+    packetSerial.update();
 }
+
 
