@@ -20,9 +20,10 @@
 #define LED_PIN 6
 #define NUMPIXELS 21
 
-#define MAX_DELTATIME 20000
+#define MAX_DELTATIME 1000000
 #define DIR_PIN 4
 #define SERVO_PIN 10
+#define MOTOR_SPEED_PIN 11
 
 #define ENCODER_PIN 3
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
@@ -39,7 +40,7 @@ const float R1 = 3700.0;
 const float R2 = 1490.0;
 unsigned int interval = 500;           // interval at which to blink (milliseconds)
 float measuredVoltage;
-unsigned long enableCounter;
+boolean powered = false;
 
 void onLedCommand(const char* cmd_msg);
 void onSteeringCommand(const uint8_t cmd_msg);
@@ -57,10 +58,16 @@ volatile unsigned long T1Ovs2;
 volatile int16_t encoder_counter;              //CAPTURE FLAG
 volatile int16_t last_encoder_counter;
 volatile unsigned long deltatime = 0;
+volatile unsigned long lastEncoderTime = 0;
 volatile boolean first_rising = true;
 volatile uint8_t ticks = 0;
+int currentSpeed = 0;
 
 int8_t direction_motor = 1;
+
+#define VOLTAGE_BUFFER_SIZE 256
+uint16_t voltageBuffer[VOLTAGE_BUFFER_SIZE] = {0};
+uint8_t voltageIndex = 0;
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
@@ -97,12 +104,28 @@ enum class MessageType :uint8_t {
     VOLTAGE
 };
 
+enum class VoltageStatus {
+    DISABLED,
+    BAD,
+    WARN,
+    GOOD
+};
+
+enum class Direction {
+    NONE,
+    REVERSE,
+    FORWARD
+};
+
+VoltageStatus currentVoltageStatus = VoltageStatus::DISABLED;
+Direction currentDirection = Direction::NONE;
+
 void dmpDataReady() {
     mpuInterrupt = true;
 }
 
-void StartTimer2(void) {
-    pinMode(11, OUTPUT); //976.5625Hz
+/*void StartTimer2(void) {
+    pinMode(MOTOR_SPEED_PIN, OUTPUT); //976.5625Hz
     TCNT2 = 0;
     TIFR2 = 0x00;
     TIMSK2 = TIMSK2 | 0x01;
@@ -115,16 +138,17 @@ void StartTimer2(void) {
 ISR(TIMER2_OVF_vect) {
     TIFR2 = 0x00;
     T1Ovs2++;//INCREMENTING OVERFLOW COUNTER
-}
+}*/
 
 void encoder() {
     cli();
+    unsigned long ms = micros();
     if (!first_rising) {
-        deltatime = T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10;// prevent overflow of integer number!
+        deltatime = ms - lastEncoderTime;
     }
 
-    T1Ovs2 = 0;         //SAVING FIRST OVERFLOW COUNTER
-    TCNT2 = 0;
+    lastEncoderTime = ms;
+
     first_rising = false;
     encoder_counter++;
     ticks++;
@@ -155,8 +179,13 @@ void onSteeringCommand(const uint8_t cmd_msg) {
 }
 
 
-void displayBackwardLed() {
+void displayReverseLed() {
+    if (currentDirection == Direction::REVERSE) {
+        return;
+    }
+
     pixels.setBrightness(16);
+
     pixels.setPixelColor(2, 255, 255, 255);
     pixels.setPixelColor(3, 255, 255, 255);
     pixels.setPixelColor(7, 255, 255, 255);
@@ -168,9 +197,15 @@ void displayBackwardLed() {
     pixels.setPixelColor(18, 0, 0, 0);
 
     pixels.show();
+
+    currentDirection = Direction::REVERSE;
 }
 
 void displayForwardLed() {
+    if (currentDirection == Direction::FORWARD) {
+        return;
+    }
+
     pixels.setBrightness(16);
 
     pixels.setPixelColor(2, 0, 0, 0);
@@ -183,9 +218,15 @@ void displayForwardLed() {
     pixels.setPixelColor(17, 255, 255, 255);
     pixels.setPixelColor(18, 255, 255, 255);
     pixels.show();
+
+    currentDirection = Direction::FORWARD;
 }
 
 void disableDirectionLed() {
+    if (currentDirection == Direction::NONE) {
+        return;
+    }
+
     pixels.setBrightness(16);
 
     pixels.setPixelColor(2, 0, 0, 0);
@@ -199,14 +240,21 @@ void disableDirectionLed() {
     pixels.setPixelColor(18, 0, 0, 0);
 
     pixels.show();
+
+    currentDirection = Direction::NONE;
 }
 
 void onSpeedCommand(const int16_t cmd_msg) {
     int16_t motor_val = cmd_msg / 4;
 
     if (abs(motor_val) > 255) {
+        motor_val = 255;
+    }
+
+    if (currentSpeed == motor_val) {
         return;
     }
+    currentSpeed = motor_val;
 
     uint8_t servo_val = (uint8_t) abs(motor_val);
 
@@ -216,7 +264,7 @@ void onSpeedCommand(const int16_t cmd_msg) {
     if (motor_val < 0) {
         digitalWrite(DIR_PIN, HIGH);
         direction_motor = -1;
-        displayBackwardLed();
+        displayReverseLed();
     } else if (motor_val > 0) {
         digitalWrite(DIR_PIN, LOW);
         direction_motor = 1;
@@ -228,7 +276,7 @@ void onSpeedCommand(const int16_t cmd_msg) {
         disableDirectionLed();
     }
 
-    OCR2A = servo_val;
+    analogWrite(MOTOR_SPEED_PIN, servo_val);
 }
 
 void onLedCommand(const char* cmd_msg) {
@@ -262,35 +310,59 @@ void onLedCommand(const char* cmd_msg) {
     pixels.show(); // This sends the updated pixel color to the hardware.
 }
 
+
 void displayVoltageGoodLed() {
+    if (currentVoltageStatus == VoltageStatus::GOOD) {
+        return;
+    }
+
     pixels.setBrightness(16);
     pixels.setPixelColor(5, 0, 255, 0);
     pixels.setPixelColor(15, 0, 255, 0);
     pixels.setPixelColor(16, 0, 255, 0);
     pixels.show();
+
+    currentVoltageStatus = VoltageStatus::GOOD;
 }
 
 void displayVoltageWarningLed() {
+    if (currentVoltageStatus == VoltageStatus::WARN) {
+        return;
+    }
     pixels.setBrightness(16);
     pixels.setPixelColor(5, 255, 255, 0);
     pixels.setPixelColor(15, 255, 255, 0);
     pixels.setPixelColor(16, 255, 255, 0);
     pixels.show();
+
+    currentVoltageStatus = VoltageStatus::WARN;
 }
 
 void displayVoltageBadLed() {
+    if (currentVoltageStatus == VoltageStatus::BAD) {
+        return;
+    }
     pixels.setBrightness(16);
     pixels.setPixelColor(5, 255, 0, 0);
     pixels.setPixelColor(15, 255, 0, 0);
     pixels.setPixelColor(16, 255, 0, 0);
     pixels.show();
+
+    currentVoltageStatus = VoltageStatus::BAD;
+
 }
 
 void disableLed() {
+    if (currentVoltageStatus == VoltageStatus::DISABLED) {
+        return;
+    }
+
     pixels.setPixelColor(5, 0, 0, 0);
     pixels.setPixelColor(15, 0, 0, 0);
     pixels.setPixelColor(16, 0, 0, 0);
     pixels.show();
+
+    currentVoltageStatus = VoltageStatus::DISABLED;
 }
 
 
@@ -384,11 +456,13 @@ void log(MessageType type, char *str) {
     packetSerial.send(buf, size);
 }
 
-void sendIMU(Quaternion &quaternion) {
-    uint8_t size = sizeof(MessageType) + sizeof(quaternion);
+void sendIMU(float yaw, float pitch, float roll) {
+    uint8_t size = sizeof(MessageType) + sizeof(yaw) + sizeof(pitch) + sizeof(roll);
     uint8_t buf[size];
     buf[0] = (uint8_t)MessageType::IMU;
-    memcpy(&buf[1], &quaternion, sizeof(quaternion));
+    memcpy(&buf[1], &yaw, sizeof(yaw));
+    memcpy(&buf[1 + sizeof(yaw)], &pitch, sizeof(pitch));
+    memcpy(&buf[1 + sizeof(yaw) + sizeof(pitch)], &roll, sizeof(roll));
     packetSerial.send(buf, size);
 }
 
@@ -516,11 +590,11 @@ void setup() {
         logerror(F(")"));
     }
 
+    pinMode(MOTOR_SPEED_PIN, OUTPUT);
     pinMode(ENCODER_PIN, INPUT);
     pinMode(DIR_PIN, OUTPUT);
     pinMode(ENCODER_PIN, INPUT_PULLUP);
     digitalWrite(ENCODER_PIN, HIGH);             //pull up
-    StartTimer2();
     attachInterrupt(digitalPinToInterrupt(ENCODER_PIN), encoder, RISING);
     pixels.begin(); // This initializes the NeoPixel library.
     //Voltmeter
@@ -528,6 +602,31 @@ void setup() {
     digitalWrite(ENABLE_PIN, LOW);
 }
 
+float meanVoltage() {
+    uint32_t sum = 0;
+    for (int i = 0; i < VOLTAGE_BUFFER_SIZE; i++) {
+        sum += voltageBuffer[i];
+    }
+
+    float avg = sum / (float)VOLTAGE_BUFFER_SIZE;
+    float vout = (avg * referenceVolts) / 1024.0;
+    return vout / (R2/(R1+R2));
+}
+
+void turnOnCar() {
+    if (!powered) {
+        digitalWrite(ENABLE_PIN, HIGH);
+    }
+
+    powered = true;
+}
+
+void turnOffCar() {
+    if (powered) {
+        digitalWrite(ENABLE_PIN, LOW);
+    }
+    powered = false;
+}
 
 // ================================================================
 // ===                    MAIN PROGRAM LOOP                     ===
@@ -573,26 +672,27 @@ void loop() {
                 mpu.dmpGetGravity(&gravity, &q);
                 mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
-                sendIMU(q);
+                sendIMU(ypr[0], ypr[1], ypr[2]);
 
                 float speed = 0.0;
                 // if the motor has stopped we publish the speed when IMU data is rdy because this runs at 100hz
+
+                // make a copy of deltatime because interrupts might run in between
+                unsigned long dt = deltatime;
                 if (last_encoder_counter == encoder_counter) {
                     // we did receive nothing so check if the motor has stopped
-                    if (T1Ovs2 * 25 + T1Ovs2 * 5 / 10 + TCNT2 / 10 > MAX_DELTATIME) {
+                    if (micros() - lastEncoderTime > MAX_DELTATIME) {
                         first_rising = true;
 
                         speed = 0.0;
                         sendSpeed(speed);
-
-                        deltatime = 0;
                     }
                 }
                     // we did receive data from the motor
                 else {
-                    if (deltatime != 0) {
-                        //rad/second -> each tick is 0.005 ms: Arduino timer is 2Mhz , but counter divided by 10 in arduino! 6 lines per revolution!
-                        speed = (M_PI / 3.0) / (deltatime * 0.005 * 0.001);
+                    if (dt != 0) {
+                        // radians / s
+                        speed = (M_PI / 3.0) / (dt / 1000000.0);
                     } else {
                         speed = 0.0;
                     }
@@ -607,66 +707,29 @@ void loop() {
                 sendSteeringAngle(analogRead(SERVO_FEEDBACK_MOTOR_PIN));
 
                 /***Voltmeter**/
-                int value = analogRead(BATTERY_PIN);
-                int enable_pin_status = LOW;
-                float vout = (value * referenceVolts) / 1024.0;
-                measuredVoltage = vout / (R2/(R1+R2));
-                unsigned long currentMillis = millis();
-
-                //Check voltage, if it is below 13V then the indicator start blinking before turning off
-                if (measuredVoltage > 14.0){
-                    unsigned long enableCounter_now = millis();
-                    unsigned long dt = enableCounter_now - enableCounter;
-
-                    if (dt > 3000){
-                        enable_pin_status = HIGH;
-                        ledState = HIGH;
-                    }
-                    else
-                        enable_pin_status = LOW;
-                }
-                else{
-                    enableCounter = millis();
-                    enable_pin_status = LOW;
+                voltageBuffer[voltageIndex++] = analogRead(BATTERY_PIN);;
+                if (voltageIndex >= VOLTAGE_BUFFER_SIZE) {
+                    voltageIndex = 0;
                 }
 
-                if (measuredVoltage > 14.5) {
+                float voltage = meanVoltage();
+
+                if (millis() > 3000 && voltage > 13.7){
+                    turnOnCar();
+                }
+                else {
+                    turnOffCar();
+                }
+
+                if (voltage > 14.5) {
                     displayVoltageGoodLed();
-                } else if (measuredVoltage <= 14.5 && measuredVoltage >= 13.8)
-                {
-                    if(currentMillis - previousMillis > interval)
-                    {
-                        // save the last time you blinked the LED
-                        previousMillis = currentMillis;
-
-                        // if the LED is off turn it on and vice-versa:
-                        if (ledState == LOW) {
-                            ledState = HIGH;
-                            displayVoltageWarningLed();
-                        }
-                        else {
-                            ledState = LOW;
-                            disableLed();
-                        }
-                    }
-                } else if (measuredVoltage < 13.7) {
-                    // save the last time you blinked the LED
-                    if(currentMillis - previousMillis > interval) {
-                        previousMillis = currentMillis;
-
-                        // if the LED is off turn it on and vice-versa:
-                        if (ledState == LOW) {
-                            ledState = HIGH;
-                            displayVoltageBadLed();
-                        } else {
-                            ledState = LOW;
-                            disableLed();
-                        }
-                    }
+                } else if (voltage <= 14.5 && voltage >= 14.0) {
+                    displayVoltageWarningLed();
+                } else if (voltage < 14.0) {
+                    displayVoltageBadLed();
                 }
 
-                digitalWrite(ENABLE_PIN, enable_pin_status);
-                sendVoltage(measuredVoltage);
+                sendVoltage(voltage);
             }
         }
     }
